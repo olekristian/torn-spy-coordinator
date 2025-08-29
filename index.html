@@ -5,230 +5,94 @@
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Torn Spy Coordinator</title>
 <style>
-  :root{--bg:#0b1320;--card:#111a2b;--muted:#7e8aa0;--text:#e8eefc;--accent:#89b4ff;--good:#3ddc97;--warn:#ffd166;--bad:#ef476f}
-  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial}
-  .wrap{max-width:1100px;margin:24px auto;padding:0 16px}
-  h1{font-size:26px;margin:0 0 8px} .sub{color:var(--muted);margin:0 0 16px}
-  .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 18px}
-  input, textarea, button, select{font:inherit}
-  input, textarea, select{background:#0e1626;border:1px solid #22314f;color:var(--text);border-radius:10px;padding:10px 12px}
-  textarea{width:100%;min-height:140px;resize:vertical}
-  button{background:#1b2640;color:#eaf2ff;border:1px solid #2a3a63;padding:10px 14px;border-radius:10px;cursor:pointer}
-  button:hover{border-color:#3a5499}
-  .tabs{display:flex;gap:6px;margin:0 0 14px}
-  .tab{padding:8px 12px;border:1px solid #22314f;border-radius:999px;background:#0e1626;color:#cfe0ff}
-  .tab.active{background:#203058;border-color:#3d5591}
-  .grid{display:grid;gap:12px}
-  @media(min-width:800px){.grid.cards{grid-template-columns:repeat(3,1fr)}}
-  .card{background:var(--card);border:1px solid #1a2744;border-radius:16px;box-shadow:0 3px 16px rgba(0,0,0,.25)}
-  .card .hd{padding:14px 14px 0;font-weight:600}
-  .card .bd{padding:14px}
-  .muted{color:var(--muted)}
-  .row{display:flex;gap:8px;align-items:center}
-  .pill{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid #2a3a63}
-  .status-open{color:#fff;background:#2a3a63}
-  .status-claimed{color:#111;background:var(--warn)}
-  .status-submitted{color:#111;background:var(--good)}
-  .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;white-space:pre-wrap;background:#0e1626;border:1px solid #22314f;border-radius:10px;padding:10px}
-  .divider{height:1px;background:#1a2744;margin:8px 0}
+:root{--bg:#0b1320;--card:#111a2b;--muted:#7e8aa0;--text:#e8eefc;--accent:#89b4ff;--good:#3ddc97;--warn:#ffd166;--bad:#ef476f}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial}
+.wrap{max-width:1100px;margin:24px auto;padding:0 16px}
+h1{font-size:26px;margin:0 0 8px} .sub{color:var(--muted);margin:0 0 16px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 18px}
+input, textarea, button, select{font:inherit}
+input, textarea, select{background:#0e1626;border:1px solid #22314f;color:var(--text);border-radius:10px;padding:10px 12px}
+textarea{width:100%;min-height:140px;resize:vertical}
+button{background:#1b2640;color:#eaf2ff;border:1px solid #2a3a63;padding:10px 14px;border-radius:10px;cursor:pointer}
+button:hover{border-color:#3a5499}
+.tabs{display:flex;gap:6px;margin:0 0 14px}
+.tab{padding:8px 12px;border:1px solid #22314f;border-radius:999px;background:#0e1626;color:#cfe0ff}
+.tab.active{background:#203058;border-color:#3d5591}
+.grid{display:grid;gap:12px}
+@media(min-width:800px){.grid.cards{grid-template-columns:repeat(3,1fr)}}
+.card{background:var(--card);border:1px solid #1a2744;border-radius:16px;box-shadow:0 3px 16px rgba(0,0,0,.25)}
+.card .hd{padding:14px 14px 0;font-weight:600}
+.card .bd{padding:14px}
+.muted{color:var(--muted)}
+.row{display:flex;gap:8px;align-items:center}
+.pill{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid #2a3a63}
+.status-open{color:#fff;background:#2a3a63}
+.status-claimed{color:#111;background:var(--warn)}
+.status-submitted{color:#111;background:var(--good)}
+.mono{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;white-space:pre-wrap;background:#0e1626;border:1px solid #22314f;border-radius:10px;padding:10px}
+.divider{height:1px;background:#1a2744;margin:8px 0}
 </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>Torn Spy Coordinator</h1>
-    <p class="sub">Free, single‑file tool for claiming spy targets and submitting standardized results.</p>
+<div class="wrap">
+<h1>Torn Spy Coordinator</h1>
+<p class="sub">Free, single‑file tool for claiming spy targets and submitting standardized results.</p>
 
-    <div class="bar">
-      <input id="me" placeholder="Your display name" style="width:220px">
-      <input id="api" placeholder="API Base URL (Apps Script)" style="width:420px">
-      <input id="key" placeholder="API Key (optional)" style="width:220px">
-      <button id="save">Save</button>
-      <button id="refresh">Refresh</button>
-      <span id="err" class="muted"></span>
-    </div>
 
-    <div class="tabs">
-      <button class="tab active" data-tab="board">Claim Board</button>
-      <button class="tab" data-tab="submit">Submit</button>
-      <button class="tab" data-tab="manage">Manager</button>
-      <button class="tab" data-tab="setup">Setup</button>
-    </div>
+<div class="bar">
+<input id="me" placeholder="Your display name" style="width:220px">
+<input id="api" placeholder="API Base URL (Apps Script)" style="width:420px">
+<input id="key" placeholder="API Key (optional)" style="width:220px">
+<button id="save">Save</button>
+<button id="refresh">Refresh</button>
+<span id="err" class="muted"></span>
+</div>
 
-    <section id="tab-board">
-      <div class="card"><div class="hd">Open & Claimed</div><div class="bd">
-        <div id="tasks" class="grid cards"></div>
-      </div></div>
 
-      <div class="card" style="margin-top:12px"><div class="hd">Recently Submitted</div><div class="bd">
-        <div id="recent" class="grid cards"></div>
-      </div></div>
-    </section>
+<div class="tabs">
+<button class="tab active" data-tab="board">Claim Board</button>
+<button class="tab" data-tab="submit">Submit</button>
+<button class="tab" data-tab="manage">Manager</button>
+<button class="tab" data-tab="setup">Setup</button>
+</div>
 
-    <section id="tab-submit" hidden>
-      <div class="card"><div class="hd">Submit Spy (Ad‑hoc)</div><div class="bd grid">
-        <textarea id="paste" placeholder="Paste any spy text here..."></textarea>
-        <div class="mono" id="preview"></div>
-        <div class="row">
-          <button id="copy">Copy Preview</button>
-        </div>
-      </div></div>
-    </section>
 
-    <section id="tab-manage" hidden>
-      <div class="card"><div class="hd">Add Target</div><div class="bd grid">
-        <div class="row">
-          <input id="m-name" placeholder="Target name (e.g., tc103)" style="flex:1">
-          <input id="m-id" placeholder="Target ID (optional)" style="width:180px">
-          <input id="m-notes" placeholder="Notes (faction, deadline)" style="flex:1">
-          <button id="m-add">Add to Board</button>
-        </div>
-        <div class="muted">New tasks appear on the board after refresh.</div>
-      </div></div>
-    </section>
+<section id="tab-board">
+<div class="card"><div class="hd">Open & Claimed</div><div class="bd">
+<div id="tasks" class="grid cards"></div>
+</div></div>
 
-    <section id="tab-setup" hidden>
-      <div class="card"><div class="hd">Setup</div><div class="bd">
-        <ol>
-          <li>Create a Google Sheet tab named <b>Tasks</b> with headers (row 1):<br>
-            <span class="mono">id | createdAt | status | targetName | targetId | notes | claimedBy | claimedAt | submittedAt | payloadJson | formatted</span>
-          </li>
-          <li>Open <b>Extensions → Apps Script</b>. Paste the backend code I provided into <b>Code.gs</b>. Deploy: <b>Deploy → New deployment → Web app</b>. Copy the URL.</li>
-          <li>Paste that URL into <b>API Base URL</b> above. (Optional) set a Script property <b>API_KEY</b> and paste the same value here.</li>
-        </ol>
-        <p class="muted">Host this file anywhere: GitHub Pages, Netlify, or just open it locally in your browser.</p>
-      </div></div>
-    </section>
-  </div>
 
-<script>
-// ===== Utilities =====
-function $(q){return document.querySelector(q)}
-function el(tag, attrs={}, ...kids){
-  const n = document.createElement(tag);
-  for (const k in attrs) {
-    if (k == "class") n.className = attrs[k];
-    else if (k == "html") n.innerHTML = attrs[k];
-    else n.setAttribute(k, attrs[k]);
-  }
-  const add = (child) => {
-    if (child == null) return; // null/undefined
-    if (Array.isArray(child)) { child.forEach(add); return; }
-    // Convert primitives safely to text
-    if (typeof child === 'string' || typeof child === 'number' || typeof child === 'boolean') {
-      n.appendChild(document.createTextNode(String(child)));
-      return;
-    }
-    // Only append real Nodes
-    if (child instanceof Node) { n.appendChild(child); return; }
-    // Fallback: stringify unknown objects to avoid Node.appendChild errors
-    try { n.appendChild(document.createTextNode(String(child))); } catch(_) {}
-  };
-  kids.forEach(add);
-  return n
-}
+<div class="card" style="margin-top:12px"><div class="hd">Recently Submitted</div><div class="bd">
+<div id="recent" class="grid cards"></div>
+</div></div>
+</section>
 
-const fmtInt = (n)=> (n==null||isNaN(n)? "": Number(n).toLocaleString("en-US"));
-const numFrom = (raw)=>{ if(!raw) return null; let s=String(raw).trim().toLowerCase().replace(/[\,\s]/g,""); const m=s.match(/^(\d+(?:\.\d+)?)([kmbt])?$/i); if(m){ const x=parseFloat(m[1]); const pow={k:1e3,m:1e6,b:1e9,t:1e12}; return Math.round(x*(m[2]?pow[m[2]]:1)); } if(/^\d+$/.test(s)) return parseInt(s,10); const e=Number(s); return Number.isFinite(e)? Math.round(e): null; };
-function extractNameId(text){ const idm=text.match(/\[(\d{3,})\]/); let name=null; if(idm){ const idx=idm.index; const before=text.slice(0,idx).trim(); const last=(before.split(/\n|\r/).filter(Boolean).pop()||before); name=last.replace(/.*?(Name\s*:\s*)/i,"").replace(/\(.*?\)/g,"").trim(); if(!name){ const m2=text.match(/^\s*([\w .\-]{2,})/); if(m2) name=m2[1].trim(); } return {id:idm[1], name:name||null}; } const nm=text.match(/(?:^|\n|\r)\s*Name\s*:\s*(.+)$/im); if(nm) return {id:null,name:nm[1].trim()}; return {id:null,name:null}; }
-function extractLevel(text){ const m=text.match(/Level\s*[:\-]?\s*(\d{1,3})/i); if(m) return parseInt(m[1],10); const m2=text.match(/\(\s*lv?l?\s*(\d{1,3})\s*\)/i); if(m2) return parseInt(m2[1],10); return null; }
-function extractStats(text){ const out={str:null,spd:null,dex:null,def:null,total:null}; const find=(keys)=>{ const r=new RegExp(`(?:^|\\n|\\r|\\s)(?:${keys.join("|")})\\s*[:=\\-]\\s*([\\d.,]+|\\d+(?:\\.\\d+)?[kmbt])`,`i`); const m=text.match(r); return m? numFrom(m[1]) : null; }; out.str=find(["strength","str"]); out.spd=find(["speed","spd","sp"]); out.dex=find(["dexterity","dex"]); out.def=find(["defense","defence","def"]); out.total=find(["total","sum"]); if(out.total==null && [out.str,out.spd,out.dex,out.def].every(v=>v!=null)){ out.total=out.str+out.spd+out.dex+out.def; } return out; }
-function parseSpy(raw){ const t=raw.replace(/\u00A0/g," ").trim(); const {id,name}=extractNameId(t); const level=extractLevel(t); const s=extractStats(t); const ok=[s.str,s.spd,s.dex,s.def].every(v=>v!=null); return {ok,name:name||"",id:id||"",level:level??null,strength:s.str,speed:s.spd,dexterity:s.dex,defense:s.def,total:s.total}; }
-function formatBlock(p){ const nm=p.name? p.name:"Unknown"; const id=p.id? ` [${p.id}]`: ""; const tot = p.total ?? ((p.strength||0)+(p.speed||0)+(p.dexterity||0)+(p.defense||0)); return [
-  `Name:${nm}${id}`,
-  ``,
-  `Level:${p.level ?? "?"}`,
-  ``,
-  `You managed to get the following results:`,
-  ``,
-  `Strength: ${fmtInt(p.strength||0)}`,
-  ``,
-  `Speed: ${fmtInt(p.speed||0)}`,
-  ``,
-  `Dexterity: ${fmtInt(p.dexterity||0)}`,
-  ``,
-  `Defense: ${fmtInt(p.defense||0)}`,
-  ``,
-  `Total: ${fmtInt(tot)}`
-].join("\n"); }
 
-// ===== State & Settings =====
-const state={ tasks:[], me:"", api:"", key:"" };
-function loadSettings(){ state.me=localStorage.getItem('torn_employee')||''; state.api=localStorage.getItem('torn_api_base')||''; state.key=localStorage.getItem('torn_api_key')||''; $('#me').value=state.me; $('#api').value=state.api; $('#key').value=state.key; }
-function saveSettings(){ state.me=$('#me').value.trim(); state.api=$('#api').value.trim(); state.key=$('#key').value.trim(); localStorage.setItem('torn_employee',state.me); localStorage.setItem('torn_api_base',state.api); localStorage.setItem('torn_api_key',state.key); }
+<section id="tab-submit" hidden>
+<div class="card"><div class="hd">Submit Spy (Ad‑hoc)</div><div class="bd grid">
+<textarea id="paste" placeholder="Paste any spy text here..."></textarea>
+<div class="mono" id="preview"></div>
+<div class="row">
+<button id="copy">Copy Preview</button>
+</div>
+</div></div>
+</section>
 
-async function call(path, method='GET', body){
-  if(!state.api) throw new Error('API not configured');
-  // Include key as query param for Apps Script
-  let url = state.api + path + (path.includes('?') ? (state.key? `&key=${encodeURIComponent(state.key)}` : '') : (state.key? `?key=${encodeURIComponent(state.key)}` : ''));
-  try {
-    const opts = { method };
-    // Avoid setting Content-Type to prevent CORS preflight
-    if (body) opts.body = JSON.stringify(body);
-    const res = await fetch(url, opts);
-    if (!res.ok) throw new Error(await res.text());
-    return await res.json();
-  } catch (err) {
-    // Fallback to GET with payload in querystring if POST blocked
-    if (method !== 'GET') {
-      const qp = encodeURIComponent(JSON.stringify(body||{}));
-      const res = await fetch(url + (url.includes('?')?'&':'?') + 'payload=' + qp + '&_m=get', { method: 'GET' });
-      if (!res.ok) throw new Error(await res.text());
-      return await res.json();
-    }
-    throw err;
-  }
-}
 
-// ===== UI Render =====
-function render(){ const open = state.tasks.filter(t=>t.status!=="submitted"); const rec = state.tasks.filter(t=>t.status==="submitted").slice(0,12);
-  const tasksEl=$('#tasks'); tasksEl.innerHTML='';
-  open.forEach(t=>{ const card=el('div',{class:'card'}, el('div',{class:'bd'},
-    el('div',{class:'row'}, el('div',{style:'font-weight:600;font-size:16px'}, `${t.targetName||'Unknown'} ${t.targetId?`[${t.targetId}]`:''}`),
-      el('span',{class:`pill status-${t.status}`}, t.status)),
-    t.notes? el('div',{class:'muted',style:'margin-top:4px'}, t.notes): null,
-    el('div',{class:'muted',style:'margin-top:4px'}, t.claimedBy? `Claimed by ${t.claimedBy}` : 'Not claimed'),
-    el('div',{class:'row',style:'gap:8px;margin-top:8px'},
-      t.status==='open' ? el('button',{onclick:()=>claim(t.id),},'Claim') : null,
-      (t.status==='claimed' && t.claimedBy===state.me) ? el('button',{onclick:()=>unclaim(t.id)},'Unclaim') : null
-    ),
-    (t.status==='claimed' && t.claimedBy===state.me) ? el('div',{},
-      el('div',{class:'muted',style:'margin:10px 0 6px'},'Paste spy result then submit'),
-      el('textarea',{id:`paste-${t.id}`,placeholder:'Paste spy text here'}),
-      el('div',{class:'row',style:'margin-top:8px'}, el('button',{onclick:()=>submitSpy(t.id)},'Submit Result'))
-    ) : null
-  )); tasksEl.appendChild(card); });
+<section id="tab-manage" hidden>
+<div class="card"><div class="hd">Add Target</div><div class="bd grid">
+<div class="row">
+<input id="m-name" placeholder="Target name (e.g., tc103)" style="flex:1">
+<input id="m-id" placeholder="Target ID (optional)" style="width:180px">
+<input id="m-notes" placeholder="Notes (faction, deadline)" style="flex:1">
+<button id="m-add">Add to Board</button>
+</div>
+<div class="muted">New tasks appear on the board after refresh.</div>
+</div></div>
+</section>
 
-  const recentEl=$('#recent'); recentEl.innerHTML='';
-  rec.forEach(t=>{ const card=el('div',{class:'card'}, el('div',{class:'bd'},
-    el('div',{style:'font-weight:600'}, `${t.targetName||'Unknown'} ${t.targetId?`[${t.targetId}]`:''}`),
-    el('div',{class:'muted'}, `by ${t.claimedBy||'—'}`),
-    el('div',{class:'mono',style:'margin-top:8px;white-space:pre-wrap'}, t.formatted || (t.payload&&t.payload.formatted) || '')
-  )); recentEl.appendChild(card); });
-}
 
-// ===== Actions =====
-async function refresh(){ $('#err').textContent=''; try{ const data=await call('?action=list','GET'); state.tasks=data.tasks||[]; render(); }catch(e){ $('#err').textContent=String(e.message||e); } }
-async function claim(id){ await call('', 'POST', {action:'claim', id, employee: state.me}); await refresh(); }
-async function unclaim(id){ await call('', 'POST', {action:'unclaim', id, employee: state.me}); await refresh(); }
-async function submitSpy(id){ const ta=$(`#paste-${id}`); const parsed=parseSpy(ta.value||''); const payload={ name: parsed.name, targetId: parsed.id, level: parsed.level, strength: parsed.strength, speed: parsed.speed, dexterity: parsed.dexterity, defense: parsed.defense, total: parsed.total, formatted: formatBlock(parsed) }; await call('', 'POST', {action:'submit', id, employee: state.me, payload}); ta.value=''; await refresh(); }
-async function addTask(){ const name=$('#m-name').value.trim(); const tid=$('#m-id').value.trim(); const notes=$('#m-notes').value.trim(); if(!name){alert('Please enter a target name'); return;} await call('', 'POST', {action:'add', targetName:name, targetId:tid, notes}); $('#m-name').value=''; $('#m-id').value=''; $('#m-notes').value=''; await refresh(); }
-
-// Ad-hoc submit preview
-$('#paste').addEventListener('input',()=>{ const p=parseSpy($('#paste').value||''); $('#preview').textContent=formatBlock(p);});
-$('#copy').addEventListener('click',()=>{ navigator.clipboard.writeText($('#preview').textContent||''); });
-
-// Tabs
-for(const b of document.querySelectorAll('.tab')){ b.addEventListener('click',()=>{ document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active')); b.classList.add('active'); const id=b.dataset.tab; for(const s of ['board','submit','manage','setup']){ document.querySelector(`#tab-${s}`).hidden = (s!==id); } }); }
-
-// Top bar buttons
-$('#save').addEventListener('click',()=>{ saveSettings(); refresh(); });
-$('#refresh').addEventListener('click',refresh);
-
-// Manager
-$('#m-add').addEventListener('click',addTask);
-
-// Init
-loadSettings(); refresh();
-</script>
-</body>
+<section id="tab-setup" hidden>
+<div class="card"><div class="hd">Setup</div><div class="bd">
 </html>
