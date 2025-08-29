@@ -5,35 +5,85 @@
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Bring Em Closer — Stat Spy Coordinator</title>
 <style>
- :root{
-  --bg:#0f1a13; --card:#132318; --muted:#9fb3a7; --text:#e8f5ee;
-  --accent:#22c55e; --good:#22c55e; --warn:#fbbf24;
+:root {
+  --bg: #0f1a13;
+  --card: #132318;
+  --muted: #9fb3a7;
+  --text: #e8f5ee;
+  --accent: #22c55e;
+  --good: #22c55e;
+  --warn: #fbbf24;
 }
-  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial}
-  .wrap{max-width:1100px;margin:24px auto;padding:0 16px}
-  h1{font-size:26px;margin:0 0 8px} .sub{color:var(--muted);margin:0 0 16px}
-  .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0 18px}
-  input, textarea, button, select{font:inherit}
-  input, textarea, select{background:#0e1626;border:1px solid #22314f;color:var(--text);border-radius:10px;padding:10px 12px}
-  textarea{width:100%;min-height:140px;resize:vertical}
-  button{background:#1b2640;color:#eaf2ff;border:1px solid #2a3a63;padding:10px 14px;border-radius:10px;cursor:pointer}
-  button:hover{border-color:#3a5499}
-  .tabs{display:flex;gap:6px;margin:0 0 14px}
-  .tab{padding:8px 12px;border:1px solid #22314f;border-radius:999px;background:#0e1626;color:#cfe0ff}
-  .tab.active{background:#203058;border-color:#3d5591}
-  .grid{display:grid;gap:12px}
-  @media(min-width:800px){.grid.cards{grid-template-columns:repeat(3,1fr)}}
-  .card{background:var(--card);border:1px solid #1a2744;border-radius:16px;box-shadow:0 3px 16px rgba(0,0,0,.25)}
-  .card .hd{padding:14px 14px 0;font-weight:600}
-  .card .bd{padding:14px}
-  .muted{color:var(--muted)}
-  .row{display:flex;gap:8px;align-items:center}
-  .pill{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid #2a3a63}
-  .status-open{color:#fff;background:#2a3a63}
-  .status-claimed{color:#111;background:var(--warn)}
-  .status-submitted{color:#111;background:var(--good)}
-  .mono{font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;white-space:pre-wrap;background:#0e1626;border:1px solid #22314f;border-radius:10px;padding:10px}
-  .divider{height:1px;background:#1a2744;margin:8px 0}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.4 system-ui, Segoe UI, Roboto, Helvetica, Arial;
+}
+.wrap { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
+h1 { font-size: 26px; margin: 0 0 8px; }
+.sub { color: var(--muted); margin: 0 0 16px; }
+.bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0 18px; }
+input, textarea, button, select { font: inherit; }
+input, textarea, select {
+  background: #0e1626;
+  border: 1px solid #22314f;
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+textarea { width: 100%; min-height: 140px; resize: vertical; }
+button {
+  background: #1b2640;
+  color: #eaf2ff;
+  border: 1px solid #2a3a63;
+  padding: 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+button:hover { border-color: #3a5499; }
+.tabs { display: flex; gap: 6px; margin: 0 0 14px; }
+.tab {
+  padding: 8px 12px;
+  border: 1px solid #22314f;
+  border-radius: 999px;
+  background: #0e1626;
+  color: #cfe0ff;
+}
+.tab.active { background: #203058; border-color: #3d5591; }
+.grid { display: grid; gap: 12px; }
+@media (min-width: 800px) {
+  .grid.cards { grid-template-columns: repeat(3, 1fr); }
+}
+.card {
+  background: var(--card);
+  border: 1px solid #1a2744;
+  border-radius: 16px;
+  box-shadow: 0 3px 16px rgba(0,0,0,.25);
+}
+.card .hd { padding: 14px 14px 0; font-weight: 600; }
+.card .bd { padding: 14px; }
+.muted { color: var(--muted); }
+.row { display: flex; gap: 8px; align-items: center; }
+.pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid #2a3a63;
+}
+.status-open { color: #fff; background: #2a3a63; }
+.status-claimed { color: #111; background: var(--warn); }
+.status-submitted { color: #111; background: var(--good); }
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  background: #0e1626;
+  border: 1px solid #22314f;
+  border-radius: 10px;
+  padding: 10px;
+}
+.divider { height: 1px; background: #1a2744; margin: 8px 0; }
 </style>
 </head>
 <body>
@@ -42,8 +92,6 @@
 <p class="sub">Internal coordinator for Stat Spies. Claim, submit, and standardize results.</p>
     <div class="bar">
       <input id="me" placeholder="Your display name" style="width:220px">
-      <input id="api" placeholder="API Base URL (Apps Script)" style="width:420px">
-      <input id="key" placeholder="API Key (optional)" style="width:220px">
       <input id="adm" placeholder="Admin Key (admins only)" style="width:220px">
       <button id="save">Save</button>
       <button id="refresh">Refresh</button>
@@ -55,7 +103,7 @@
       <button class="tab active" data-tab="board">Claim Board</button>
       <button class="tab" data-tab="submit">Submit</button>
       <button class="tab" data-tab="manage">Manager</button>
-      <button id="tabbtn-setup" class="tab" data-tab="setup">Setup</button>
+      <!-- <button id="tabbtn-setup" class="tab" data-tab="setup">Setup</button> -->
 
     </div>
 
@@ -113,11 +161,20 @@
   </div>
 
 <script>
+const DEFAULT_API = "https://script.google.com/macros/s/AKfycbxsuE-bQ47I5sc5oC-Ju6ARc3vTzHU1fRGNWbh2eRVTeGlO3qTAawxcENv_KnjNcNHv/exec";
+const DEFAULT_KEY = "Meget!HemmeligSuperHemmeligKode2025";   // or "" if you don't want to enforce
 // ===== Helpers =====
 function qs(sel){ return document.querySelector(sel); }
 function setStatus(msg){ const e=qs('#err'); if(e) e.textContent = msg || ''; }
-const state={ tasks:[], me:"", api:"", key:"", admin:"" };
-const DEFAULT_API = "https://script.google.com/macros/s/AKfycbxsuE-bQ47I5sc5oC-Ju6ARc3vTzHU1fRGNWbh2eRVTeGlO3qTAawxcENv_KnjNcNHv/exec";
+
+const state={ 
+  tasks:[], 
+  me:"", 
+  api: DEFAULT_API, 
+  key: DEFAULT_KEY, 
+  admin:"" 
+};
+
 function completeStats(p){
   const toInt = (x)=> x==null ? null : Math.round(Number(x));
   const a = {
@@ -173,23 +230,20 @@ function formatBlock(p){
 
 function loadSettings(){
   state.me=localStorage.getItem('torn_employee')||'';
-  state.api=localStorage.getItem('torn_api_base')||'';
-  state.key=localStorage.getItem('torn_api_key')||'';
   state.admin = localStorage.getItem('torn_admin_key') || '';
-if ($('#adm')) $('#adm').value = state.admin;
-  const meI=qs('#me'), apiI=qs('#api'), keyI=qs('#key');
-  if(meI) meI.value=state.me; if(apiI) apiI.value=state.api; if(keyI) keyI.value=state.key;
+  if (qs('#adm')) qs('#adm').value = state.admin;
+  const meI=qs('#me');
+  if(meI) meI.value=state.me;
   enforceVisibility();
 }
 function saveSettings(){
   state.me=(qs('#me').value||'').trim();
-  state.api=(qs('#api').value||'').trim();
-  state.key=(qs('#key').value||'').trim();
   state.owner=(document.querySelector('#owner')?.value||'').trim();
-  state.admin = ($('#adm')?.value || '').trim();
+  state.admin = (qs('#adm')?.value || '').trim();
   localStorage.setItem('torn_employee',state.me);
-  localStorage.setItem('torn_api_base',state.api);
-  localStorage.setItem('torn_api_key',state.key);
+  localStorage.setItem('torn_owner',state.owner);
+  localStorage.setItem('torn_admin_key', state.admin);
+  enforceVisibility();
   localStorage.setItem('torn_owner',state.owner);
   localStorage.setItem('torn_admin_key', state.admin);
   enforceVisibility();
@@ -457,7 +511,7 @@ function formatSubmittedList(tasks){
 loadSettings();
 setStatus('Loading...');
 refresh();
-enforceVisibility
+enforceVisibility();
 </script>
 
 
