@@ -103,7 +103,29 @@
 <script>
 // ===== Utilities =====
 function $(q){return document.querySelector(q)}
-function el(tag, attrs={}, ...kids){const n=document.createElement(tag);for(const k in attrs){if(k=="class")n.className=attrs[k];else if(k=="html")n.innerHTML=attrs[k];else n.setAttribute(k,attrs[k]);}kids.flat().forEach(k=>{if(k==null)return; if(typeof k==="string")n.appendChild(document.createTextNode(k)); else n.appendChild(k)});return n}
+function el(tag, attrs={}, ...kids){
+  const n = document.createElement(tag);
+  for (const k in attrs) {
+    if (k == "class") n.className = attrs[k];
+    else if (k == "html") n.innerHTML = attrs[k];
+    else n.setAttribute(k, attrs[k]);
+  }
+  const add = (child) => {
+    if (child == null) return; // null/undefined
+    if (Array.isArray(child)) { child.forEach(add); return; }
+    // Convert primitives safely to text
+    if (typeof child === 'string' || typeof child === 'number' || typeof child === 'boolean') {
+      n.appendChild(document.createTextNode(String(child)));
+      return;
+    }
+    // Only append real Nodes
+    if (child instanceof Node) { n.appendChild(child); return; }
+    // Fallback: stringify unknown objects to avoid Node.appendChild errors
+    try { n.appendChild(document.createTextNode(String(child))); } catch(_) {}
+  };
+  kids.forEach(add);
+  return n
+}
 
 const fmtInt = (n)=> (n==null||isNaN(n)? "": Number(n).toLocaleString("en-US"));
 const numFrom = (raw)=>{ if(!raw) return null; let s=String(raw).trim().toLowerCase().replace(/[\,\s]/g,""); const m=s.match(/^(\d+(?:\.\d+)?)([kmbt])?$/i); if(m){ const x=parseFloat(m[1]); const pow={k:1e3,m:1e6,b:1e9,t:1e12}; return Math.round(x*(m[2]?pow[m[2]]:1)); } if(/^\d+$/.test(s)) return parseInt(s,10); const e=Number(s); return Number.isFinite(e)? Math.round(e): null; };
@@ -134,32 +156,22 @@ const state={ tasks:[], me:"", api:"", key:"" };
 function loadSettings(){ state.me=localStorage.getItem('torn_employee')||''; state.api=localStorage.getItem('torn_api_base')||''; state.key=localStorage.getItem('torn_api_key')||''; $('#me').value=state.me; $('#api').value=state.api; $('#key').value=state.key; }
 function saveSettings(){ state.me=$('#me').value.trim(); state.api=$('#api').value.trim(); state.key=$('#key').value.trim(); localStorage.setItem('torn_employee',state.me); localStorage.setItem('torn_api_base',state.api); localStorage.setItem('torn_api_key',state.key); }
 
-async function call(path, method = 'GET', body) {
-  if (!state.api) throw new Error('API not configured');
-
-  // Add API key as query param so Apps Script can read it reliably
-  let url = state.api + path + (
-    path.includes('?')
-      ? (state.key ? `&key=${encodeURIComponent(state.key)}` : '')
-      : (state.key ? `?key=${encodeURIComponent(state.key)}` : '')
-  );
-
+async function call(path, method='GET', body){
+  if(!state.api) throw new Error('API not configured');
+  // Include key as query param for Apps Script
+  let url = state.api + path + (path.includes('?') ? (state.key? `&key=${encodeURIComponent(state.key)}` : '') : (state.key? `?key=${encodeURIComponent(state.key)}` : ''));
   try {
     const opts = { method };
-    // No Content-Type header => no CORS preflight
+    // Avoid setting Content-Type to prevent CORS preflight
     if (body) opts.body = JSON.stringify(body);
-
     const res = await fetch(url, opts);
     if (!res.ok) throw new Error(await res.text());
     return await res.json();
   } catch (err) {
-    // Fallback to GET with payload in querystring
+    // Fallback to GET with payload in querystring if POST blocked
     if (method !== 'GET') {
-      const qp = encodeURIComponent(JSON.stringify(body || {}));
-      const res = await fetch(
-        url + (url.includes('?') ? '&' : '?') + 'payload=' + qp + '&_m=get',
-        { method: 'GET' }
-      );
+      const qp = encodeURIComponent(JSON.stringify(body||{}));
+      const res = await fetch(url + (url.includes('?')?'&':'?') + 'payload=' + qp + '&_m=get', { method: 'GET' });
       if (!res.ok) throw new Error(await res.text());
       return await res.json();
     }
