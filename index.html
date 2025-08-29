@@ -134,7 +134,7 @@ const state={ tasks:[], me:"", api:"", key:"" };
 function loadSettings(){ state.me=localStorage.getItem('torn_employee')||''; state.api=localStorage.getItem('torn_api_base')||''; state.key=localStorage.getItem('torn_api_key')||''; $('#me').value=state.me; $('#api').value=state.api; $('#key').value=state.key; }
 function saveSettings(){ state.me=$('#me').value.trim(); state.api=$('#api').value.trim(); state.key=$('#key').value.trim(); localStorage.setItem('torn_employee',state.me); localStorage.setItem('torn_api_base',state.api); localStorage.setItem('torn_api_key',state.key); }
 
-async function call(path, method='GET', body){ if(!state.api) throw new Error('API not configured'); const res=await fetch(state.api+path,{ method, headers:{'Content-Type':'application/json', ...(state.key? {'X-API-Key':state.key}:{}) }, ...(body? {body:JSON.stringify(body)}:{}), }); if(!res.ok){ throw new Error(await res.text()); } return res.json(); }
+async function call(path, method='GET', body){ if(!state.api) throw new Error('API not configured'); let url = state.api + path + (path.includes('?') ? (state.key? `&key=${encodeURIComponent(state.key)}` : '') : (state.key? `?key=${encodeURIComponent(state.key)}` : '')); const opts = { method, headers:{'Content-Type':'application/json'}, ...(body? {body:JSON.stringify({...body, ...(state.key? {key: state.key}: {})})}:{}), }; const res = await fetch(url, opts); if(!res.ok){ throw new Error(await res.text()); } return res.json(); }
 
 // ===== UI Render =====
 function render(){ const open = state.tasks.filter(t=>t.status!=="submitted"); const rec = state.tasks.filter(t=>t.status==="submitted").slice(0,12);
