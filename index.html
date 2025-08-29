@@ -205,10 +205,73 @@ function completeStats(p){
   return p;
 }
 
+function extractSpyBlocks(raw){
+  const t = sanitizeInput(raw||'');
+  const re = /(^|\n)\s*Name\s*[:\-]?.*?(?=(\n\s*Name\s*[:\-]?|$))/gis;
+  const blocks = [];
+  let m;
+  while((m = re.exec(t))){ blocks.push(m[0].trim()); }
+  return blocks.length ? blocks : [t];
+}
+
+function mergeTwo(a, b){
+  const out = { ...a };
+  // identitet
+  out.name     = out.name     || b.name;
+  out.id       = out.id       || b.id;
+  out.targetId = out.targetId || b.targetId;
+  out.level    = out.level!=null ? out.level : b.level;
+
+  const pickNum = (x,y)=>{
+    const ax = (x==null || isNaN(x)) ? null : Number(x);
+    const by = (y==null || isNaN(y)) ? null : Number(y);
+    if (ax==null) return by;
+    if (by==null) return ax;
+    return Math.max(ax, by); // konservativt
+  };
+
+  out.strength  = pickNum(out.strength,  b.strength);
+  out.speed     = pickNum(out.speed,     b.speed);
+  out.dexterity = pickNum(out.dexterity, b.dexterity);
+  out.defense   = pickNum(out.defense,   b.defense);
+
+  // Viktig: vi ignorerer innlimt "total" – settes senere ut fra 4 stats
+  out.total = null;
+
+  return out;
+}
+
+// Slå sammen mange del-logger for samme spiller og kalkuler streng total
+function mergeSpiesStrictTotal(spyArray){
+  const map = new Map();
+  const keyFor = (p)=>{
+    const id = (p.id || p.targetId || '').trim();
+    const name = (p.name||'').trim().toLowerCase();
+    const lvl = p.level != null ? String(p.level) : '';
+    return id ? `id:${id}|lv:${lvl}` : `name:${name}|lv:${lvl}`;
+  };
+
+  for (const p of spyArray){
+    const k = keyFor(p);
+    if (!map.has(k)) map.set(k, { ...p, total:null });
+    else map.set(k, mergeTwo(map.get(k), p));
+  }
+
+  // Etter merge: hvis alle 4 stats finnes → total = sum; ellers null
+  return Array.from(map.values()).map(x=>{
+    const has4 = [x.strength,x.speed,x.dexterity,x.defense].every(v=>v!=null);
+    x.total = has4 ? (x.strength + x.speed + x.dexterity + x.defense) : null;
+    return x;
+  });
+}
+
 function formatBlock(p){
-  completeStats(p);
+  // Re-kalkuler alltid total strengt fra 4 stats
+  const has4 = [p.strength,p.speed,p.dexterity,p.defense].every(v=>v!=null);
+  const total = has4 ? (p.strength + p.speed + p.dexterity + p.defense) : null;
+
   const fmt = (n)=> (n==null?0:n).toLocaleString('en-US');
-  const nm = (p.name||'Unknown') + (p.targetId? ` [${p.targetId}]`:'');
+  const nm = (p.name||'Unknown') + (p.targetId? ` [${p.targetId}]`:(p.id? ` [${p.id}]`:''));
   return [
     `Name:${nm}`,
     ``,
@@ -224,9 +287,10 @@ function formatBlock(p){
     ``,
     `Defense: ${fmt(p.defense)}`,
     ``,
-    `Total: ${fmt(p.total)}`
+    `Total: ${fmt(total)}`
   ].join('\n');
 }
+
 
 function loadSettings(){
   state.me=localStorage.getItem('torn_employee')||'';
@@ -281,56 +345,149 @@ async function call(path, method='GET', body){
 
 
 // ===== Parser & format =====
-const fmtInt = (n)=> (n==null||isNaN(n)? '': Number(n).toLocaleString('en-US'));
-const numFrom = (raw)=>{
-  if(!raw) return null;
-  let s=String(raw).trim().toLowerCase().replace(/[,\s]/g,'');
-  const m=s.match(/^(\d+(?:\.\d+)?)([kmbt])?$/i);
-  if(m){ const x=parseFloat(m[1]); const pow={k:1e3,m:1e6,b:1e9,t:1e12}; return Math.round(x*(m[2]?pow[m[2]]:1)); }
-  if(/^\d+$/.test(s)) return parseInt(s,10);
-  const e=Number(s); return Number.isFinite(e)? Math.round(e): null;
-};
-function extractNameId(text){
-  const idm=text.match(/\[(\d{3,})\]/); let name=null;
-  if(idm){
-    const idx=idm.index; const before=text.slice(0,idx).trim();
-    const last=(before.split(/\n|\r/).filter(Boolean).pop()||before);
-    name=last.replace(/.*?(Name\s*:\s*)/i,'').replace(/\(.*?\)/g,'').trim();
-    if(!name){ const m2=text.match(/^\s*([\w .\-]{2,})/); if(m2) name=m2[1].trim(); }
-    return {id:idm[1], name:name||null};
-  }
-  const nm=text.match(/(?:^|\n|\r)\s*Name\s*:\s*(.+)$/im);
-  if(nm) return {id:null,name:nm[1].trim()};
-  return {id:null,name:null};
+// ===== Robust spy parser (drop-in) =====
+function sanitizeInput(raw){
+  let t = String(raw||'')
+    .replace(/\u00A0/g,' ')   // NBSP -> space
+    .replace(/\r/g,'')        // CRLF -> LF
+    .trim();
+
+  // Fjern prefiks som "1:", "2:", "-", "•" i linjestart (vanlig ved copy/paste)
+  t = t.split('\n').map(line =>
+    line.replace(/^\s*(?:\d+\s*:|[-–•*]\s*)\s*/, '')
+  ).join('\n');
+
+  return t;
 }
-function extractLevel(text){
-  const m=text.match(/Level\s*[:\-]?\s*(\d{1,3})/i); if(m) return parseInt(m[1],10);
-  const m2=text.match(/\(\s*lv?l?\s*(\d{1,3})\s*\)/i); if(m2) return parseInt(m2[1],10);
+
+function parseNumberToken(s){
+  if(!s) return null;
+  let x = String(s).trim().toLowerCase().replace(/[, ]+/g,''); // fjern komma OG spaces
+  const m = x.match(/^(\d+(?:\.\d+)?)([kmbt])?$/i);
+  if (m){
+    const base = parseFloat(m[1]);
+    const mul = {k:1e3,m:1e6,b:1e9,t:1e12}[m[2]?.toLowerCase()] || 1;
+    return Math.round(base*mul);
+  }
+  if (/^\d+$/.test(x)) return parseInt(x,10);
+  const n = Number(x);
+  return Number.isFinite(n) ? Math.round(n) : null;
+}
+
+function parseNameId(raw){
+  const t = sanitizeInput(raw);
+
+  // 1) "Name: X [123]" (slapp med spacing)
+  let m = t.match(/^\s*Name\s*[:\-]?\s*([^\n\r\[]+?)\s*(?:\[(\d{3,})\])?\s*$/im);
+  if (m) return { name: (m[1]||'').trim(), id: m[2] || '' };
+
+  // 2) Finn "[123]" og trekk navn fra samme linje (før [id]) eller linja over
+  const idm = t.match(/\[(\d{3,})\]/);
+  if (idm){
+    const idx = idm.index;
+    const ls  = t.lastIndexOf('\n', idx) + 1;
+    const le  = t.indexOf('\n', idx);
+    const line = t.slice(ls, le === -1 ? t.length : le);
+
+    let name = line
+      .replace(/\[[^\]]+\].*$/,'') // kutt ut [id] og etterfølgende
+      .replace(/^(?:Name|Target|Player|You\s+spied\s+on|Spied\s+on)\s*[:\-]?\s*/i,'')
+      .replace(/\(.*?\)/g,'')
+      .trim();
+
+    if (!name){
+      const before = t.slice(0, idx).split('\n').map(s=>s.trim()).filter(Boolean);
+      name = before.length ? before[before.length-1]
+        .replace(/^(?:Name|Target|Player)\s*[:\-]?\s*/i,'').trim() : '';
+    }
+    return { name, id: idm[1] };
+  }
+
+  return { name:'', id:'' };
+}
+
+function parseLevel(raw){
+  const t = sanitizeInput(raw);
+  const rx = [
+    /(?:^|\n)\s*Level\s*[:\-]?\s*(\d{1,3})\b/i,
+    /\(\s*Level\s*(\d{1,3})\s*\)/i,
+    /\bL(?:evel|vl|v)\.?\s*(\d{1,3})\b/i
+  ];
+  for (const r of rx){
+    const m = t.match(r);
+    if (m) return parseInt(m[1],10);
+  }
   return null;
 }
-function extractStats(text){
-  const out={str:null,spd:null,dex:null,def:null,total:null};
-  const find=(keys)=>{
-    const r=new RegExp('(?:^|\\n|\\r|\\s)(?:'+keys.join('|')+')\\s*[:=\\-]\\s*([\\d.,]+|\\d+(?:\\.\\d+)?[kmbt])','i');
-    const m=text.match(r); return m? numFrom(m[1]) : null;
+
+function parseStats(raw){
+  const t = sanitizeInput(raw);
+  const find = (labels)=>{
+    const r = new RegExp(
+      '(?:^|\\n|\\r|\\s)(?:'+labels.join('|')+')\\s*[:=\\-]\\s*([\\d., ]+|\\d+(?:\\.\\d+)?[kmbt])',
+      'i'
+    );
+    const m = t.match(r);
+    return m ? parseNumberToken(m[1]) : null;
   };
-  out.str=find(['strength','str']); out.spd=find(['speed','spd','sp']);
-  out.dex=find(['dexterity','dex']); out.def=find(['defense','defence','def']);
-  out.total=find(['total','sum']);
-  if(out.total==null && [out.str,out.spd,out.dex,out.def].every(v=>v!=null)){
-    out.total=out.str+out.spd+out.dex+out.def;
+  return {
+    strength: find(['strength','str']),
+    speed:    find(['speed','spd','sp']),
+    dexterity:find(['dexterity','dex']),
+    defense:  find(['defense','defence','def']),
+    total:    find(['total','sum'])
+  };
+}
+
+function completeStats(p){
+  const a = {
+    strength: p.strength==null? null : Math.round(Number(p.strength)),
+    speed:    p.speed==null?    null : Math.round(Number(p.speed)),
+    dexterity:p.dexterity==null?null : Math.round(Number(p.dexterity)),
+    defense:  p.defense==null?  null : Math.round(Number(p.defense)),
+    total:    p.total==null?    null : Math.round(Number(p.total))
+  };
+  const parts = [a.strength,a.speed,a.dexterity,a.defense];
+  const known = parts.filter(v=>v!=null).length;
+
+  // Fyll Total fra 4/4
+  if (a.total==null && known===4) a.total = parts[0]+parts[1]+parts[2]+parts[3];
+
+  // Fyll én manglende stat fra Total + 3/4
+  if (a.total!=null && known===3){
+    const miss = parts.findIndex(v=>v==null);
+    const sumKnown = parts.reduce((s,v)=>s+(v||0),0);
+    const val = Math.max(0, a.total - sumKnown);
+    if (miss===0) a.strength = val;
+    if (miss===1) a.speed    = val;
+    if (miss===2) a.dexterity= val;
+    if (miss===3) a.defense  = val;
   }
-  return out;
+  Object.assign(p,a);
+  return p;
 }
+
 function parseSpy(raw){
-  const t=(raw||'').replace(/\u00A0/g,' ').trim();
-  const {id,name}=extractNameId(t); const level=extractLevel(t); const s=extractStats(t);
-  return {name:name||'',id:id||'',level:level??null,strength:s.str,speed:s.spd,dexterity:s.dex,defense:s.def,total:s.total};
+  const {name,id} = parseNameId(raw);
+  const level = parseLevel(raw);
+  const s = parseStats(raw);
+  return completeStats({
+    name: (name||'').trim(),
+    id:   (id||'').trim(),
+    level: level ?? null,
+    strength: s.strength,
+    speed:    s.speed,
+    dexterity:s.dexterity,
+    defense:  s.defense,
+    total:    s.total
+  });
 }
+
+// Optional: your formatter, updated to show either targetId or parsed id
 function formatBlock(p){
   completeStats(p);
   const fmt = (n)=> (n==null?0:n).toLocaleString('en-US');
-  const nm = (p.name||'Unknown') + (p.targetId? ` [${p.targetId}]`:'');
+  const nm = (p.name||'Unknown') + (p.targetId? ` [${p.targetId}]`:(p.id? ` [${p.id}]`:''));
   return [
     `Name:${nm}`,
     ``,
@@ -349,6 +506,7 @@ function formatBlock(p){
     `Total: ${fmt(p.total)}`
   ].join('\n');
 }
+
 function isAdmin(){
   // Hvis Owner ikke er satt, vis alt (enkelt å teste).
   // Sett Owner til ditt eget navn for å låse ned.
@@ -395,7 +553,7 @@ function render(){
     if(t.status==='open'){ const b=document.createElement('button'); b.textContent='Claim'; b.onclick=function(){claim(t.id)}; row.appendChild(b); }
     if(t.status==='claimed' && t.claimedBy===state.me){
       const u=document.createElement('button'); u.textContent='Unclaim'; u.onclick=function(){unclaim(t.id)}; row.appendChild(u);
-      const hint=document.createElement('div'); hint.className='muted'; hint.style.margin='10px 0 6px'; hint.textContent='Paste spy result then submit'; bd.appendChild(hint);
+      const hint=document.createElement('div'); hint.className='muted'; hint.style.margin='10px 0 6px'; hint.textContent='Paste one or more spy logs for this target. We will merge and auto-calculate the total.'; bd.appendChild(hint);
       const ta=document.createElement('textarea'); ta.id='paste-'+t.id; ta.placeholder='Paste spy text here'; bd.appendChild(ta);
       const row2=document.createElement('div'); row2.className='row'; row2.style.marginTop='8px'; bd.appendChild(row2);
       const s=document.createElement('button'); s.textContent='Submit Result'; s.onclick=function(){submitSpy(t.id)}; row2.appendChild(s);
@@ -424,18 +582,45 @@ async function unclaim(id){ try{ await call('', 'POST', {action:'unclaim', id, e
 async function submitSpy(id){
   if(!state.me){ alert('Set your display name first.'); return; }
   try{
-    const ta=document.getElementById('paste-'+id);
-    const parsed=parseSpy(ta.value||'');
-    completeStats(parsed); // <<< compute missing before sending
+    const ta = document.getElementById('paste-'+id);
+    const raw = ta.value || '';
 
-    const payload={
-      name: parsed.name, targetId: parsed.id, level: parsed.level,
-      strength: parsed.strength, speed: parsed.speed,
-      dexterity: parsed.dexterity, defense: parsed.defense,
-      total: parsed.total, formatted: formatBlock(parsed)
+    // 1) Del opp & parse alle blokker
+    const blocks  = extractSpyBlocks(raw);
+    const partial = blocks.map(b => parseSpy(b));
+
+    // 2) Merge strengt (Total = sum av 4, aldri fra tekst)
+    const merged  = mergeSpiesStrictTotal(partial);
+
+    // Vanligvis blir dette én spiller. Hvis flere, ta første (si ifra om du vil ha batch).
+    let p = merged[0] || {};
+
+    // Fallback fra selve tasken
+    const task = state.tasks.find(t => String(t.id)===String(id)) || {};
+    if(!p.name && task.targetName) p.name = task.targetName;
+    if(!p.id   && task.targetId)   p.id   = task.targetId;
+
+    // Re-kalkuler streng total (i tilfelle)
+    const has4 = [p.strength,p.speed,p.dexterity,p.defense].every(v=>v!=null);
+    p.total = has4 ? (p.strength + p.speed + p.dexterity + p.defense) : null;
+
+    const payload = {
+      name: p.name,
+      targetId: p.id,
+      level: p.level,
+      strength: p.strength,
+      speed: p.speed,
+      dexterity: p.dexterity,
+      defense: p.defense,
+      total: p.total,
+      formatted: formatBlock(p)
     };
 
-    await call('', 'POST', {action:'submit', id, employee: state.me, payload});
+    await call('', 'POST', {
+      action:'submit', id, employee: state.me,
+      name: payload.name, targetId: payload.targetId, payload
+    });
+
     ta.value='';
     await refresh();
   }catch(e){
@@ -443,6 +628,7 @@ async function submitSpy(id){
     if (err) err.textContent = 'Submit failed: ' + (e.message||e);
   }
 }
+
 
 async function addTask(){
   const name=(qs('#m-name').value||'').trim();
@@ -459,16 +645,19 @@ function formatSubmittedList(tasks){
   const blocks = tasks
     .filter(t => t.status==='submitted')
     .map(t => {
-      if (t.formatted && String(t.formatted).trim()) return t.formatted;
+      // Bygg på nytt for å garantere at Total = sum(4)
       const p = Object.assign({}, t.payload||{}, {
         name: t.targetName,
         targetId: t.targetId
       });
+      // Re-calc strict total
+      const has4 = [p.strength,p.speed,p.dexterity,p.defense].every(v=>v!=null);
+      p.total = has4 ? (p.strength + p.speed + p.dexterity + p.defense) : null;
       return formatBlock(p);
     });
-  // Triple newline between entries (matches your sample)
   return blocks.join('\n\n\n');
 }
+
 
 // ===== Events =====
 (function bind(){
@@ -476,8 +665,21 @@ function formatSubmittedList(tasks){
   const refBtn =qs('#refresh');if(refBtn)  refBtn.addEventListener('click',()=>{ refresh(); });
   const addBtn =qs('#m-add');  if(addBtn)  addBtn.addEventListener('click',addTask);
 
-  const paste=qs('#paste');
-  if(paste){ paste.addEventListener('input',()=>{ const p=parseSpy(qs('#paste').value||''); qs('#preview').textContent=formatBlock(p); }); }
+  const pasteEl = document.getElementById('paste');
+  const previewEl = document.getElementById('preview');
+
+  if (pasteEl && previewEl){
+    pasteEl.addEventListener('input', ()=>{
+      const blocks = extractSpyBlocks(pasteEl.value || '');
+      const partials = blocks.map(b => parseSpy(b));   // parse hver blokk
+      const merged = mergeSpiesStrictTotal(partials);  // slå sammen pr. spiller
+
+      // Bygg forhåndsvisning: en formatBlock per sammenslått resultat
+      const listText = merged.map(p => formatBlock(p)).join('\n\n\n');
+      previewEl.textContent = listText;
+    });
+  }
+
   const copy=qs('#copy');
   if(copy){ copy.addEventListener('click',()=>{ navigator.clipboard.writeText(qs('#preview').textContent||''); }); }
   const copyAllBtn = document.getElementById('copy-all');
