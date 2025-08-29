@@ -44,11 +44,12 @@
       <input id="me" placeholder="Your display name" style="width:220px">
       <input id="api" placeholder="API Base URL (Apps Script)" style="width:420px">
       <input id="key" placeholder="API Key (optional)" style="width:220px">
-      <input id="owner" placeholder="Owner name (admin)" style="width:200px">
+      <input id="adm" placeholder="Admin Key (admins only)" style="width:220px">
       <button id="save">Save</button>
       <button id="refresh">Refresh</button>
       <span id="err" class="muted"></span>
     </div>
+
 
     <div class="tabs">
       <button class="tab active" data-tab="board">Claim Board</button>
@@ -63,10 +64,14 @@
         <div id="tasks" class="grid cards"></div>
       </div></div>
 
-      <div id="recent-card" class="card" style="margin-top:12px">
-        <div class="hd">Recently Submitted</div>
-        <div class="bd">
-          <div id="recent" class="grid cards"></div>
+        <div class="card" style="margin-top:12px" id="recent-card">
+          <div class="hd">
+            Recently Submitted
+            <button id="copy-all" style="margin-left:8px; padding:4px 8px; font-size:12px">Copy All</button>
+          </div>
+          <div class="bd">
+            <div id="recent" class="grid cards"></div>
+          </div>
         </div>
       </div>
     </section>
@@ -111,13 +116,67 @@
 // ===== Helpers =====
 function qs(sel){ return document.querySelector(sel); }
 function setStatus(msg){ const e=qs('#err'); if(e) e.textContent = msg || ''; }
-const state={ tasks:[], me:'', api:'', key:'', owner:'' };
+const state={ tasks:[], me:"", api:"", key:"", admin:"" };
 const DEFAULT_API = "https://script.google.com/macros/s/AKfycbxsuE-bQ47I5sc5oC-Ju6ARc3vTzHU1fRGNWbh2eRVTeGlO3qTAawxcENv_KnjNcNHv/exec";
+function completeStats(p){
+  const toInt = (x)=> x==null ? null : Math.round(Number(x));
+  const a = {
+    strength: toInt(p.strength),
+    speed: toInt(p.speed),
+    dexterity: toInt(p.dexterity),
+    defense: toInt(p.defense),
+    total: toInt(p.total)
+  };
+  const parts = [a.strength, a.speed, a.dexterity, a.defense];
+  const known = parts.filter(v=>v!=null).length;
+
+  // total from 4 parts
+  if (a.total==null && known===4) {
+    a.total = parts[0]+parts[1]+parts[2]+parts[3];
+  }
+  // one missing part from total
+  if (a.total!=null && known===3) {
+    const miss = parts.findIndex(v=>v==null);
+    const sumKnown = parts.reduce((s,v)=>s+(v||0),0);
+    const val = Math.max(0, a.total - sumKnown);
+    if (miss===0) a.strength = val;
+    if (miss===1) a.speed    = val;
+    if (miss===2) a.dexterity= val;
+    if (miss===3) a.defense  = val;
+  }
+  p.strength=a.strength; p.speed=a.speed; p.dexterity=a.dexterity; p.defense=a.defense; p.total=a.total;
+  return p;
+}
+
+function formatBlock(p){
+  completeStats(p);
+  const fmt = (n)=> (n==null?0:n).toLocaleString('en-US');
+  const nm = (p.name||'Unknown') + (p.targetId? ` [${p.targetId}]`:'');
+  return [
+    `Name:${nm}`,
+    ``,
+    `Level:${p.level ?? '?'}`,
+    ``,
+    `You managed to get the following results:`,
+    ``,
+    `Strength: ${fmt(p.strength)}`,
+    ``,
+    `Speed: ${fmt(p.speed)}`,
+    ``,
+    `Dexterity: ${fmt(p.dexterity)}`,
+    ``,
+    `Defense: ${fmt(p.defense)}`,
+    ``,
+    `Total: ${fmt(p.total)}`
+  ].join('\n');
+}
 
 function loadSettings(){
   state.me=localStorage.getItem('torn_employee')||'';
   state.api=localStorage.getItem('torn_api_base')||'';
   state.key=localStorage.getItem('torn_api_key')||'';
+  state.admin = localStorage.getItem('torn_admin_key') || '';
+if ($('#adm')) $('#adm').value = state.admin;
   const meI=qs('#me'), apiI=qs('#api'), keyI=qs('#key');
   if(meI) meI.value=state.me; if(apiI) apiI.value=state.api; if(keyI) keyI.value=state.key;
   enforceVisibility();
@@ -127,36 +186,45 @@ function saveSettings(){
   state.api=(qs('#api').value||'').trim();
   state.key=(qs('#key').value||'').trim();
   state.owner=(document.querySelector('#owner')?.value||'').trim();
+  state.admin = ($('#adm')?.value || '').trim();
   localStorage.setItem('torn_employee',state.me);
   localStorage.setItem('torn_api_base',state.api);
   localStorage.setItem('torn_api_key',state.key);
   localStorage.setItem('torn_owner',state.owner);
+  localStorage.setItem('torn_admin_key', state.admin);
   enforceVisibility();
 }
 
 async function call(path, method='GET', body){
   if(!state.api) throw new Error('API not configured');
-  let url = state.api + path + (path.includes('?')
-    ? (state.key? '&key='+encodeURIComponent(state.key) : '')
-    : (state.key? '?key='+encodeURIComponent(state.key) : ''));
-  try {
-    const opts = { method };
-    // Ingen Content-Type header -> unngår CORS preflight
-    if (body) opts.body = JSON.stringify(body);
+
+  // Build URL + query with api key and admin key
+  let url = state.api + path;
+  const q = [];
+  if (state.key)   q.push('key='   + encodeURIComponent(state.key));
+  if (state.admin) q.push('admin=' + encodeURIComponent(state.admin));
+  if (q.length) url += (url.includes('?') ? '&' : '?') + q.join('&');
+
+  const attach = (obj)=> Object.assign({}, obj||{}, state.admin ? {admin: state.admin} : {});
+  const opts = { method };
+  if (body) opts.body = JSON.stringify(attach(body));
+
+  try{
     const res = await fetch(url, opts);
-    if (!res.ok) throw new Error(await res.text());
+    if(!res.ok) throw new Error(await res.text());
     return await res.json();
-  } catch (err) {
-    // Fallback: GET med payload i query hvis POST blir blokkert
-    if (method !== 'GET') {
-      const qp = encodeURIComponent(JSON.stringify(body||{}));
-      const res = await fetch(url + (url.includes('?')?'&':'?') + 'payload=' + qp + '&_m=get', { method: 'GET' });
-      if (!res.ok) throw new Error(await res.text());
-      return await res.json();
+  }catch(e){
+    // GET fallback with payload
+    if(method !== 'GET'){
+      const payload = encodeURIComponent(JSON.stringify(attach(body)));
+      const res2 = await fetch(url + (url.includes('?')?'&':'?') + 'payload=' + payload, { method:'GET' });
+      if(!res2.ok) throw new Error(await res2.text());
+      return await res2.json();
     }
-    throw err;
+    throw e;
   }
 }
+
 
 // ===== Parser & format =====
 const fmtInt = (n)=> (n==null||isNaN(n)? '': Number(n).toLocaleString('en-US'));
@@ -206,17 +274,25 @@ function parseSpy(raw){
   return {name:name||'',id:id||'',level:level??null,strength:s.str,speed:s.spd,dexterity:s.dex,defense:s.def,total:s.total};
 }
 function formatBlock(p){
-  const nm=p.name? p.name:'Unknown'; const id=p.id? ' ['+p.id+']': '';
-  const tot = p.total ?? ((p.strength||0)+(p.speed||0)+(p.dexterity||0)+(p.defense||0));
+  completeStats(p);
+  const fmt = (n)=> (n==null?0:n).toLocaleString('en-US');
+  const nm = (p.name||'Unknown') + (p.targetId? ` [${p.targetId}]`:'');
   return [
-    'Name:'+nm+id,'',
-    'Level:'+(p.level ?? '?'),'',
-    'You managed to get the following results:','',
-    'Strength: '+fmtInt(p.strength||0),'',
-    'Speed: '+fmtInt(p.speed||0),'',
-    'Dexterity: '+fmtInt(p.dexterity||0),'',
-    'Defense: '+fmtInt(p.defense||0),'',
-    'Total: '+fmtInt(tot)
+    `Name:${nm}`,
+    ``,
+    `Level:${p.level ?? '?'}`,
+    ``,
+    `You managed to get the following results:`,
+    ``,
+    `Strength: ${fmt(p.strength)}`,
+    ``,
+    `Speed: ${fmt(p.speed)}`,
+    ``,
+    `Dexterity: ${fmt(p.dexterity)}`,
+    ``,
+    `Defense: ${fmt(p.defense)}`,
+    ``,
+    `Total: ${fmt(p.total)}`
   ].join('\n');
 }
 function isAdmin(){
@@ -226,22 +302,20 @@ function isAdmin(){
 }
 
 function enforceVisibility(){
-  const recentCard = document.getElementById('recent-card');
-  if(recentCard) recentCard.style.display = isAdmin() ? '' : 'none';
+  const isAdminUI = !!state.admin; // show admin UI only if admin key present locally
+  const rc = document.getElementById('recent-card'); if(rc) rc.style.display = isAdminUI ? '' : 'none';
+  const setupBtn = document.getElementById('tab-setup-btn'); if(setupBtn) setupBtn.style.display = isAdminUI ? '' : 'none';
+  const manageBtn = document.getElementById('tab-manage-btn'); if(manageBtn) manageBtn.style.display = isAdminUI ? '' : 'none';
+  const tabManage = document.getElementById('tab-manage'); if(tabManage) tabManage.hidden = !isAdminUI;
+  const tabSetup = document.getElementById('tab-setup'); if(tabSetup) tabSetup.hidden = !isAdminUI;
 
-  const setupBtn = document.getElementById('tabbtn-setup');
-  if(setupBtn) setupBtn.style.display = isAdmin() ? '' : 'none';
-
-  const setupTab = document.getElementById('tab-setup');
-  if(setupTab && !isAdmin()){
-    setupTab.hidden = true;
-    // Hvis du står på Setup når du mister rettighetene, hopp til Board
-    const active = document.querySelector('.tab.active');
-    if(active && active.dataset.tab === 'setup'){
-      document.querySelector("[data-tab='board']").click();
-    }
+  // If on a hidden tab, jump back to Board
+  const active = document.querySelector('.tab.active');
+  if (!isAdminUI && active && (active.dataset.tab==='setup' || active.dataset.tab==='manage')) {
+    document.querySelector('[data-tab="board"]').click();
   }
 }
+
 
 // ===== Render =====
 function render(){
@@ -298,11 +372,24 @@ async function submitSpy(id){
   try{
     const ta=document.getElementById('paste-'+id);
     const parsed=parseSpy(ta.value||'');
-    const payload={ name: parsed.name, targetId: parsed.id, level: parsed.level, strength: parsed.strength, speed: parsed.speed, dexterity: parsed.dexterity, defense: parsed.defense, total: parsed.total, formatted: formatBlock(parsed) };
+    completeStats(parsed); // <<< compute missing before sending
+
+    const payload={
+      name: parsed.name, targetId: parsed.id, level: parsed.level,
+      strength: parsed.strength, speed: parsed.speed,
+      dexterity: parsed.dexterity, defense: parsed.defense,
+      total: parsed.total, formatted: formatBlock(parsed)
+    };
+
     await call('', 'POST', {action:'submit', id, employee: state.me, payload});
-    ta.value=''; await refresh();
-  }catch(e){ setStatus('Submit failed: '+String(e.message||e)); }
+    ta.value='';
+    await refresh();
+  }catch(e){
+    const err = document.getElementById('err');
+    if (err) err.textContent = 'Submit failed: ' + (e.message||e);
+  }
 }
+
 async function addTask(){
   const name=(qs('#m-name').value||'').trim();
   const tid=(qs('#m-id').value||'').trim();
@@ -312,6 +399,21 @@ async function addTask(){
     await call('', 'POST', {action:'add', targetName:name, targetId:tid, notes});
     qs('#m-name').value=''; qs('#m-id').value=''; qs('#m-notes').value=''; await refresh();
   }catch(e){ setStatus('Add failed: '+String(e.message||e)); }
+}
+
+function formatSubmittedList(tasks){
+  const blocks = tasks
+    .filter(t => t.status==='submitted')
+    .map(t => {
+      if (t.formatted && String(t.formatted).trim()) return t.formatted;
+      const p = Object.assign({}, t.payload||{}, {
+        name: t.targetName,
+        targetId: t.targetId
+      });
+      return formatBlock(p);
+    });
+  // Triple newline between entries (matches your sample)
+  return blocks.join('\n\n\n');
 }
 
 // ===== Events =====
@@ -324,6 +426,20 @@ async function addTask(){
   if(paste){ paste.addEventListener('input',()=>{ const p=parseSpy(qs('#paste').value||''); qs('#preview').textContent=formatBlock(p); }); }
   const copy=qs('#copy');
   if(copy){ copy.addEventListener('click',()=>{ navigator.clipboard.writeText(qs('#preview').textContent||''); }); }
+  const copyAllBtn = document.getElementById('copy-all');
+  if (copyAllBtn){
+    copyAllBtn.addEventListener('click', async ()=>{
+      try{
+        const text = formatSubmittedList(state.tasks);
+        await navigator.clipboard.writeText(text);
+        const err = document.getElementById('err');
+        if (err) err.textContent = 'Copied all submitted to clipboard.';
+      }catch(e){
+        const err = document.getElementById('err');
+        if (err) err.textContent = 'Copy failed: ' + (e.message||e);
+      }
+    });
+  }
 
   document.querySelectorAll('.tab').forEach(b=>{
     b.addEventListener('click',()=>{
