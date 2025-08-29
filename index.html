@@ -3,9 +3,12 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Torn Spy Coordinator</title>
+<title>Bring Em Closer — Stat Spy Coordinator</title>
 <style>
-  :root{--bg:#0b1320;--card:#111a2b;--muted:#7e8aa0;--text:#e8eefc;--accent:#89b4ff;--good:#3ddc97;--warn:#ffd166;--bad:#ef476f}
+ :root{
+  --bg:#0f1a13; --card:#132318; --muted:#9fb3a7; --text:#e8f5ee;
+  --accent:#22c55e; --good:#22c55e; --warn:#fbbf24;
+}
   *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial}
   .wrap{max-width:1100px;margin:24px auto;padding:0 16px}
   h1{font-size:26px;margin:0 0 8px} .sub{color:var(--muted);margin:0 0 16px}
@@ -35,13 +38,13 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>Torn Spy Coordinator</h1>
-    <p class="sub">Free, single‑file tool for claiming spy targets and submitting standardized results.</p>
-
+<h1>Bring Em Closer Law Firm — Torn City</h1>
+<p class="sub">Internal coordinator for Stat Spies. Claim, submit, and standardize results.</p>
     <div class="bar">
       <input id="me" placeholder="Your display name" style="width:220px">
       <input id="api" placeholder="API Base URL (Apps Script)" style="width:420px">
       <input id="key" placeholder="API Key (optional)" style="width:220px">
+      <input id="owner" placeholder="Owner name (admin)" style="width:200px">
       <button id="save">Save</button>
       <button id="refresh">Refresh</button>
       <span id="err" class="muted"></span>
@@ -51,7 +54,8 @@
       <button class="tab active" data-tab="board">Claim Board</button>
       <button class="tab" data-tab="submit">Submit</button>
       <button class="tab" data-tab="manage">Manager</button>
-      <button class="tab" data-tab="setup">Setup</button>
+      <button id="tabbtn-setup" class="tab" data-tab="setup">Setup</button>
+
     </div>
 
     <section id="tab-board">
@@ -59,9 +63,12 @@
         <div id="tasks" class="grid cards"></div>
       </div></div>
 
-      <div class="card" style="margin-top:12px"><div class="hd">Recently Submitted</div><div class="bd">
-        <div id="recent" class="grid cards"></div>
-      </div></div>
+      <div id="recent-card" class="card" style="margin-top:12px">
+        <div class="hd">Recently Submitted</div>
+        <div class="bd">
+          <div id="recent" class="grid cards"></div>
+        </div>
+      </div>
     </section>
 
     <section id="tab-submit" hidden>
@@ -104,7 +111,8 @@
 // ===== Helpers =====
 function qs(sel){ return document.querySelector(sel); }
 function setStatus(msg){ const e=qs('#err'); if(e) e.textContent = msg || ''; }
-const state={ tasks:[], me:'', api:'', key:'' };
+const state={ tasks:[], me:'', api:'', key:'', owner:'' };
+const DEFAULT_API = "https://script.google.com/macros/s/AKfycbxsuE-bQ47I5sc5oC-Ju6ARc3vTzHU1fRGNWbh2eRVTeGlO3qTAawxcENv_KnjNcNHv/exec";
 
 function loadSettings(){
   state.me=localStorage.getItem('torn_employee')||'';
@@ -112,14 +120,18 @@ function loadSettings(){
   state.key=localStorage.getItem('torn_api_key')||'';
   const meI=qs('#me'), apiI=qs('#api'), keyI=qs('#key');
   if(meI) meI.value=state.me; if(apiI) apiI.value=state.api; if(keyI) keyI.value=state.key;
+  enforceVisibility();
 }
 function saveSettings(){
   state.me=(qs('#me').value||'').trim();
   state.api=(qs('#api').value||'').trim();
   state.key=(qs('#key').value||'').trim();
+  state.owner=(document.querySelector('#owner')?.value||'').trim();
   localStorage.setItem('torn_employee',state.me);
   localStorage.setItem('torn_api_base',state.api);
   localStorage.setItem('torn_api_key',state.key);
+  localStorage.setItem('torn_owner',state.owner);
+  enforceVisibility();
 }
 
 async function call(path, method='GET', body){
@@ -207,6 +219,29 @@ function formatBlock(p){
     'Total: '+fmtInt(tot)
   ].join('\n');
 }
+function isAdmin(){
+  // Hvis Owner ikke er satt, vis alt (enkelt å teste).
+  // Sett Owner til ditt eget navn for å låse ned.
+  return state.owner ? state.me === state.owner : true;
+}
+
+function enforceVisibility(){
+  const recentCard = document.getElementById('recent-card');
+  if(recentCard) recentCard.style.display = isAdmin() ? '' : 'none';
+
+  const setupBtn = document.getElementById('tabbtn-setup');
+  if(setupBtn) setupBtn.style.display = isAdmin() ? '' : 'none';
+
+  const setupTab = document.getElementById('tab-setup');
+  if(setupTab && !isAdmin()){
+    setupTab.hidden = true;
+    // Hvis du står på Setup når du mister rettighetene, hopp til Board
+    const active = document.querySelector('.tab.active');
+    if(active && active.dataset.tab === 'setup'){
+      document.querySelector("[data-tab='board']").click();
+    }
+  }
+}
 
 // ===== Render =====
 function render(){
@@ -255,7 +290,7 @@ function render(){
 }
 
 // ===== Actions =====
-async function refresh(){ setStatus(''); try{ const data=await call('?action=list','GET'); state.tasks=data.tasks||[]; render(); }catch(e){ setStatus('Refresh failed: '+String(e.message||e)); } }
+async function refresh(){ setStatus(''); try{ const data=await call('?action=list','GET'); state.tasks=data.tasks||[]; render(); }catch(e){ setStatus('Refresh failed: '+String(e.message||e)); }enforceVisibility(); }
 async function claim(id){ if(!state.me){ alert('Set your display name first.'); return; } try{ await call('', 'POST', {action:'claim', id, employee: state.me}); await refresh(); }catch(e){ setStatus('Claim failed: '+String(e.message||e)); } }
 async function unclaim(id){ try{ await call('', 'POST', {action:'unclaim', id, employee: state.me}); await refresh(); }catch(e){ setStatus('Unclaim failed: '+String(e.message||e)); } }
 async function submitSpy(id){
@@ -306,6 +341,7 @@ async function addTask(){
 loadSettings();
 setStatus('Loading...');
 refresh();
+enforceVisibility
 </script>
 
 
