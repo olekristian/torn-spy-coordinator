@@ -101,42 +101,213 @@
   </div>
 
 <script>
-// tiny helpers so the page boots without crashing
-function qs(s){ return document.querySelector(s); }
-var state={tasks:[],me:'',api:'',key:''};
+// ===== Helpers =====
+function qs(sel){ return document.querySelector(sel); }
+function setStatus(msg){ const e=qs('#err'); if(e) e.textContent = msg || ''; }
+const state={ tasks:[], me:'', api:'', key:'' };
+
 function loadSettings(){
   state.me=localStorage.getItem('torn_employee')||'';
   state.api=localStorage.getItem('torn_api_base')||'';
   state.key=localStorage.getItem('torn_api_key')||'';
-  if(qs('#me')) qs('#me').value=state.me;
-  if(qs('#api')) qs('#api').value=state.api;
-  if(qs('#key')) qs('#key').value=state.key;
+  const meI=qs('#me'), apiI=qs('#api'), keyI=qs('#key');
+  if(meI) meI.value=state.me; if(apiI) apiI.value=state.api; if(keyI) keyI.value=state.key;
 }
 function saveSettings(){
-  state.me=(qs('#me')?.value||'').trim();
-  state.api=(qs('#api')?.value||'').trim();
-  state.key=(qs('#key')?.value||'').trim();
+  state.me=(qs('#me').value||'').trim();
+  state.api=(qs('#api').value||'').trim();
+  state.key=(qs('#key').value||'').trim();
   localStorage.setItem('torn_employee',state.me);
   localStorage.setItem('torn_api_base',state.api);
   localStorage.setItem('torn_api_key',state.key);
 }
+
 async function call(path, method='GET', body){
   if(!state.api) throw new Error('API not configured');
-  let url = state.api + path + (path.includes('?') ? (state.key? `&key=${encodeURIComponent(state.key)}`:'') : (state.key? `?key=${encodeURIComponent(state.key)}`:''));
-  try{
-    const opts={method}; if(body) opts.body=JSON.stringify(body);
-    const res=await fetch(url,opts); if(!res.ok) throw new Error(await res.text());
+  let url = state.api + path + (path.includes('?')
+    ? (state.key? '&key='+encodeURIComponent(state.key) : '')
+    : (state.key? '?key='+encodeURIComponent(state.key) : ''));
+  try {
+    const opts = { method };
+    // Ingen Content-Type header -> unngår CORS preflight
+    if (body) opts.body = JSON.stringify(body);
+    const res = await fetch(url, opts);
+    if (!res.ok) throw new Error(await res.text());
     return await res.json();
-  }catch(e){
-    if(method!=='GET'){ const qp=encodeURIComponent(JSON.stringify(body||{}));
-      const res=await fetch(url+(url.includes('?')?'&':'?')+'payload='+qp+'&_m=get',{method:'GET'});
-      if(!res.ok) throw new Error(await res.text()); return await res.json();
+  } catch (err) {
+    // Fallback: GET med payload i query hvis POST blir blokkert
+    if (method !== 'GET') {
+      const qp = encodeURIComponent(JSON.stringify(body||{}));
+      const res = await fetch(url + (url.includes('?')?'&':'?') + 'payload=' + qp + '&_m=get', { method: 'GET' });
+      if (!res.ok) throw new Error(await res.text());
+      return await res.json();
     }
-    throw e;
+    throw err;
   }
 }
-function render(){ /* minimal no-op so refresh() doesn't crash; replace with full render later */ }
+
+// ===== Parser & format =====
+const fmtInt = (n)=> (n==null||isNaN(n)? '': Number(n).toLocaleString('en-US'));
+const numFrom = (raw)=>{
+  if(!raw) return null;
+  let s=String(raw).trim().toLowerCase().replace(/[,\s]/g,'');
+  const m=s.match(/^(\d+(?:\.\d+)?)([kmbt])?$/i);
+  if(m){ const x=parseFloat(m[1]); const pow={k:1e3,m:1e6,b:1e9,t:1e12}; return Math.round(x*(m[2]?pow[m[2]]:1)); }
+  if(/^\d+$/.test(s)) return parseInt(s,10);
+  const e=Number(s); return Number.isFinite(e)? Math.round(e): null;
+};
+function extractNameId(text){
+  const idm=text.match(/\[(\d{3,})\]/); let name=null;
+  if(idm){
+    const idx=idm.index; const before=text.slice(0,idx).trim();
+    const last=(before.split(/\n|\r/).filter(Boolean).pop()||before);
+    name=last.replace(/.*?(Name\s*:\s*)/i,'').replace(/\(.*?\)/g,'').trim();
+    if(!name){ const m2=text.match(/^\s*([\w .\-]{2,})/); if(m2) name=m2[1].trim(); }
+    return {id:idm[1], name:name||null};
+  }
+  const nm=text.match(/(?:^|\n|\r)\s*Name\s*:\s*(.+)$/im);
+  if(nm) return {id:null,name:nm[1].trim()};
+  return {id:null,name:null};
+}
+function extractLevel(text){
+  const m=text.match(/Level\s*[:\-]?\s*(\d{1,3})/i); if(m) return parseInt(m[1],10);
+  const m2=text.match(/\(\s*lv?l?\s*(\d{1,3})\s*\)/i); if(m2) return parseInt(m2[1],10);
+  return null;
+}
+function extractStats(text){
+  const out={str:null,spd:null,dex:null,def:null,total:null};
+  const find=(keys)=>{
+    const r=new RegExp('(?:^|\\n|\\r|\\s)(?:'+keys.join('|')+')\\s*[:=\\-]\\s*([\\d.,]+|\\d+(?:\\.\\d+)?[kmbt])','i');
+    const m=text.match(r); return m? numFrom(m[1]) : null;
+  };
+  out.str=find(['strength','str']); out.spd=find(['speed','spd','sp']);
+  out.dex=find(['dexterity','dex']); out.def=find(['defense','defence','def']);
+  out.total=find(['total','sum']);
+  if(out.total==null && [out.str,out.spd,out.dex,out.def].every(v=>v!=null)){
+    out.total=out.str+out.spd+out.dex+out.def;
+  }
+  return out;
+}
+function parseSpy(raw){
+  const t=(raw||'').replace(/\u00A0/g,' ').trim();
+  const {id,name}=extractNameId(t); const level=extractLevel(t); const s=extractStats(t);
+  return {name:name||'',id:id||'',level:level??null,strength:s.str,speed:s.spd,dexterity:s.dex,defense:s.def,total:s.total};
+}
+function formatBlock(p){
+  const nm=p.name? p.name:'Unknown'; const id=p.id? ' ['+p.id+']': '';
+  const tot = p.total ?? ((p.strength||0)+(p.speed||0)+(p.dexterity||0)+(p.defense||0));
+  return [
+    'Name:'+nm+id,'',
+    'Level:'+(p.level ?? '?'),'',
+    'You managed to get the following results:','',
+    'Strength: '+fmtInt(p.strength||0),'',
+    'Speed: '+fmtInt(p.speed||0),'',
+    'Dexterity: '+fmtInt(p.dexterity||0),'',
+    'Defense: '+fmtInt(p.defense||0),'',
+    'Total: '+fmtInt(tot)
+  ].join('\n');
+}
+
+// ===== Render =====
+function render(){
+  const open = state.tasks.filter(t=>t.status!=='submitted');
+  const rec  = state.tasks.filter(t=>t.status==='submitted').slice(0,12);
+
+  const tasksEl=qs('#tasks'); if(!tasksEl) return; tasksEl.innerHTML='';
+  open.forEach(t=>{
+    const card=document.createElement('div'); card.className='card';
+    const bd=document.createElement('div'); bd.className='bd'; card.appendChild(bd);
+
+    const header=document.createElement('div');
+    header.style.fontWeight='600'; header.style.fontSize='16px';
+    header.textContent=(t.targetName||'Unknown') + (t.targetId? ' ['+t.targetId+']':'' );
+    bd.appendChild(header);
+
+    if(t.notes){ const note=document.createElement('div'); note.className='muted'; note.style.marginTop='4px'; note.textContent=t.notes; bd.appendChild(note); }
+
+    const stat=document.createElement('div'); stat.className='muted'; stat.style.marginTop='4px';
+    stat.textContent = t.claimedBy? ('Claimed by '+t.claimedBy) : 'Not claimed'; bd.appendChild(stat);
+
+    const row=document.createElement('div'); row.className='row'; row.style.marginTop='8px'; bd.appendChild(row);
+    if(t.status==='open'){ const b=document.createElement('button'); b.textContent='Claim'; b.onclick=function(){claim(t.id)}; row.appendChild(b); }
+    if(t.status==='claimed' && t.claimedBy===state.me){
+      const u=document.createElement('button'); u.textContent='Unclaim'; u.onclick=function(){unclaim(t.id)}; row.appendChild(u);
+      const hint=document.createElement('div'); hint.className='muted'; hint.style.margin='10px 0 6px'; hint.textContent='Paste spy result then submit'; bd.appendChild(hint);
+      const ta=document.createElement('textarea'); ta.id='paste-'+t.id; ta.placeholder='Paste spy text here'; bd.appendChild(ta);
+      const row2=document.createElement('div'); row2.className='row'; row2.style.marginTop='8px'; bd.appendChild(row2);
+      const s=document.createElement('button'); s.textContent='Submit Result'; s.onclick=function(){submitSpy(t.id)}; row2.appendChild(s);
+    }
+
+    tasksEl.appendChild(card);
+  });
+
+  const recentEl=qs('#recent'); if(recentEl){
+    recentEl.innerHTML='';
+    rec.forEach(t=>{
+      const card=document.createElement('div'); card.className='card';
+      const bd=document.createElement('div'); bd.className='bd'; card.appendChild(bd);
+      const title=document.createElement('div'); title.style.fontWeight='600'; title.textContent=(t.targetName||'Unknown') + (t.targetId? ' ['+t.targetId+']':'' ); bd.appendChild(title);
+      const by=document.createElement('div'); by.className='muted'; by.textContent='by ' + (t.claimedBy||'—'); bd.appendChild(by);
+      const pre=document.createElement('div'); pre.className='mono'; pre.style.marginTop='8px'; pre.textContent=(t.formatted || (t.payload && t.payload.formatted) || ''); bd.appendChild(pre);
+      recentEl.appendChild(card);
+    });
+  }
+}
+
+// ===== Actions =====
+async function refresh(){ setStatus(''); try{ const data=await call('?action=list','GET'); state.tasks=data.tasks||[]; render(); }catch(e){ setStatus('Refresh failed: '+String(e.message||e)); } }
+async function claim(id){ if(!state.me){ alert('Set your display name first.'); return; } try{ await call('', 'POST', {action:'claim', id, employee: state.me}); await refresh(); }catch(e){ setStatus('Claim failed: '+String(e.message||e)); } }
+async function unclaim(id){ try{ await call('', 'POST', {action:'unclaim', id, employee: state.me}); await refresh(); }catch(e){ setStatus('Unclaim failed: '+String(e.message||e)); } }
+async function submitSpy(id){
+  if(!state.me){ alert('Set your display name first.'); return; }
+  try{
+    const ta=document.getElementById('paste-'+id);
+    const parsed=parseSpy(ta.value||'');
+    const payload={ name: parsed.name, targetId: parsed.id, level: parsed.level, strength: parsed.strength, speed: parsed.speed, dexterity: parsed.dexterity, defense: parsed.defense, total: parsed.total, formatted: formatBlock(parsed) };
+    await call('', 'POST', {action:'submit', id, employee: state.me, payload});
+    ta.value=''; await refresh();
+  }catch(e){ setStatus('Submit failed: '+String(e.message||e)); }
+}
+async function addTask(){
+  const name=(qs('#m-name').value||'').trim();
+  const tid=(qs('#m-id').value||'').trim();
+  const notes=(qs('#m-notes').value||'').trim();
+  if(!name){ alert('Please enter a target name'); return; }
+  try{
+    await call('', 'POST', {action:'add', targetName:name, targetId:tid, notes});
+    qs('#m-name').value=''; qs('#m-id').value=''; qs('#m-notes').value=''; await refresh();
+  }catch(e){ setStatus('Add failed: '+String(e.message||e)); }
+}
+
+// ===== Events =====
+(function bind(){
+  const saveBtn=qs('#save');   if(saveBtn) saveBtn.addEventListener('click',()=>{ saveSettings(); refresh(); });
+  const refBtn =qs('#refresh');if(refBtn)  refBtn.addEventListener('click',()=>{ refresh(); });
+  const addBtn =qs('#m-add');  if(addBtn)  addBtn.addEventListener('click',addTask);
+
+  const paste=qs('#paste');
+  if(paste){ paste.addEventListener('input',()=>{ const p=parseSpy(qs('#paste').value||''); qs('#preview').textContent=formatBlock(p); }); }
+  const copy=qs('#copy');
+  if(copy){ copy.addEventListener('click',()=>{ navigator.clipboard.writeText(qs('#preview').textContent||''); }); }
+
+  document.querySelectorAll('.tab').forEach(b=>{
+    b.addEventListener('click',()=>{
+      document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      const id=b.dataset.tab;
+      ['board','submit','manage','setup'].forEach(s=>{
+        const sec=qs('#tab-'+s); if(sec) sec.hidden = (s!==id);
+      });
+    });
+  });
+})();
+
+// ===== Init =====
+loadSettings();
+setStatus('Loading...');
+refresh();
 </script>
+
 
 </body>
 </html>
