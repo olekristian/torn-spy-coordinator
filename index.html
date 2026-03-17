@@ -92,6 +92,7 @@ button:hover { border-color: #3a5499; }
 <p class="sub">Internal coordinator for Stat Spies. Claim, submit, and standardize results.</p>
     <div class="bar">
       <input id="me" placeholder="Your display name" style="width:220px">
+      <input id="api-key" placeholder="API Key (optional)" style="width:220px">
       <input id="adm" placeholder="Admin Key (admins only)" style="width:220px">
       <button id="save">Save</button>
       <button id="refresh">Refresh</button>
@@ -102,7 +103,7 @@ button:hover { border-color: #3a5499; }
     <div class="tabs">
       <button class="tab active" data-tab="board">Claim Board</button>
       <!--<button class="tab" data-tab="submit">Submit</button>-->
-      <button class="tab" data-tab="manage">Manager</button>
+      <button id="tab-manage-btn" class="tab" data-tab="manage">Manager</button>
       <!-- <button id="tabbtn-setup" class="tab" data-tab="setup">Setup</button> -->
 
     </div>
@@ -144,6 +145,13 @@ button:hover { border-color: #3a5499; }
         </div>
         <div class="muted">New tasks appear on the board after refresh.</div>
       </div></div>
+      <div class="card" style="margin-top:12px"><div class="hd">Mass Import</div><div class="bd grid">
+        <textarea id="m-bulk" placeholder="One target per line. Use name | id | notes, name, id, notes, tab-separated values, or just a name."></textarea>
+        <div class="row">
+          <button id="m-import">Import Targets</button>
+          <div class="muted">Blank lines are ignored. Target ID and notes are optional.</div>
+        </div>
+      </div></div>
     </section>
 
     <section id="tab-setup" hidden>
@@ -162,7 +170,7 @@ button:hover { border-color: #3a5499; }
 
 <script>
 const DEFAULT_API = "https://script.google.com/macros/s/AKfycbxsuE-bQ47I5sc5oC-Ju6ARc3vTzHU1fRGNWbh2eRVTeGlO3qTAawxcENv_KnjNcNHv/exec";
-const DEFAULT_KEY = "Meget!HemmeligSuperHemmeligKode2025";   // or "" if you don't want to enforce
+const DEFAULT_KEY = "";
 // ===== Helpers =====
 function qs(sel){ return document.querySelector(sel); }
 function setStatus(msg){ const e=qs('#err'); if(e) e.textContent = msg || ''; }
@@ -294,7 +302,9 @@ function formatBlock(p){
 
 function loadSettings(){
   state.me=localStorage.getItem('torn_employee')||'';
+  state.key = localStorage.getItem('torn_api_key') || DEFAULT_KEY;
   state.admin = localStorage.getItem('torn_admin_key') || '';
+  if (qs('#api-key')) qs('#api-key').value = state.key;
   if (qs('#adm')) qs('#adm').value = state.admin;
   const meI=qs('#me');
   if(meI) meI.value=state.me;
@@ -302,9 +312,11 @@ function loadSettings(){
 }
 function saveSettings(){
   state.me=(qs('#me').value||'').trim();
+  state.key=(qs('#api-key')?.value||'').trim();
   state.owner=(document.querySelector('#owner')?.value||'').trim();
   state.admin = (qs('#adm')?.value || '').trim();
   localStorage.setItem('torn_employee',state.me);
+  localStorage.setItem('torn_api_key', state.key);
   localStorage.setItem('torn_owner',state.owner);
   localStorage.setItem('torn_admin_key', state.admin);
   enforceVisibility();
@@ -591,14 +603,25 @@ async function submitSpy(id){
 
     // 2) Merge strengt (Total = sum av 4, aldri fra tekst)
     const merged  = mergeSpiesStrictTotal(partial);
+    const hasParsedData = merged.some(p =>
+      p.name || p.id || p.level != null || [p.strength, p.speed, p.dexterity, p.defense, p.total].some(v => v != null)
+    );
+    if (!hasParsedData) throw new Error('No spy data could be parsed from the pasted text.');
+    if (merged.length !== 1) throw new Error('Multiple targets were detected in the pasted text. Submit one target per claimed task.');
 
-    // Vanligvis blir dette én spiller. Hvis flere, ta første (si ifra om du vil ha batch).
+    // Exactly one merged target is allowed for a claimed task.
     let p = merged[0] || {};
 
     // Fallback fra selve tasken
     const task = state.tasks.find(t => String(t.id)===String(id)) || {};
     if(!p.name && task.targetName) p.name = task.targetName;
     if(!p.id   && task.targetId)   p.id   = task.targetId;
+    if (task.targetId && p.id && String(task.targetId) !== String(p.id)) {
+      throw new Error('Parsed target ID ' + p.id + ' does not match claimed task ID ' + task.targetId + '.');
+    }
+    if (!task.targetId && task.targetName && p.name && task.targetName.trim().toLowerCase() !== p.name.trim().toLowerCase()) {
+      throw new Error('Parsed target name ' + p.name + ' does not match claimed task ' + task.targetName + '.');
+    }
 
     // Re-kalkuler streng total (i tilfelle)
     const has4 = [p.strength,p.speed,p.dexterity,p.defense].every(v=>v!=null);
@@ -627,6 +650,91 @@ async function submitSpy(id){
     const err = document.getElementById('err');
     if (err) err.textContent = 'Submit failed: ' + (e.message||e);
   }
+}
+
+
+function parseImportTarget(line){
+  const raw = (line || '').trim();
+  if (!raw) return null;
+
+  const parts = raw.includes('\t')
+    ? raw.split('\t')
+    : raw.includes('|')
+      ? raw.split('|')
+      : raw.split(',');
+
+  const trimmed = parts.map(part => part.trim());
+  const name = trimmed[0] || '';
+  if (!name) throw new Error('Missing target name.');
+
+  if (trimmed.length === 1) {
+    return { targetName: name, targetId: '', notes: '' };
+  }
+
+  const second = trimmed[1] || '';
+  const hasNumericId = /^\d+$/.test(second);
+  const targetId = hasNumericId ? second : '';
+  const notes = hasNumericId ? trimmed.slice(2).join(' | ').trim() : trimmed.slice(1).join(' | ').trim();
+
+  return { targetName: name, targetId, notes };
+}
+
+async function importTargets(){
+  const bulkEl = qs('#m-bulk');
+  const raw = bulkEl ? bulkEl.value : '';
+  const rows = String(raw || '').split('\n').map(line => line.trim()).filter(Boolean);
+  if (!rows.length) {
+    alert('Paste one or more targets to import.');
+    return;
+  }
+
+  const parsed = [];
+  const parseErrors = [];
+  rows.forEach((line, index) => {
+    try{
+      const item = parseImportTarget(line);
+      if (item) parsed.push(item);
+    }catch(e){
+      parseErrors.push('Line ' + (index + 1) + ': ' + (e.message || e));
+    }
+  });
+
+  if (parseErrors.length) {
+    setStatus('Import blocked: ' + parseErrors[0]);
+    return;
+  }
+
+  const seen = new Set();
+  const unique = [];
+  let skipped = 0;
+  parsed.forEach(item => {
+    const key = (item.targetId || '') + '|' + item.targetName.toLowerCase();
+    if (seen.has(key)) {
+      skipped += 1;
+      return;
+    }
+    seen.add(key);
+    unique.push(item);
+  });
+
+  let added = 0;
+  const failed = [];
+  for (const item of unique) {
+    try{
+      await call('', 'POST', { action:'add', targetName:item.targetName, targetId:item.targetId, notes:item.notes });
+      added += 1;
+    }catch(e){
+      failed.push(item.targetName + ': ' + String(e.message || e));
+    }
+  }
+
+  if (!failed.length && bulkEl) bulkEl.value = '';
+  await refresh();
+
+  const parts = ['Imported ' + added + ' target(s).'];
+  if (skipped) parts.push('Skipped ' + skipped + ' duplicate line(s).');
+  if (failed.length) parts.push('Failed ' + failed.length + ' target(s): ' + failed[0]);
+  setStatus(parts.join(' '));
 }
 
 
@@ -664,6 +772,7 @@ function formatSubmittedList(tasks){
   const saveBtn=qs('#save');   if(saveBtn) saveBtn.addEventListener('click',()=>{ saveSettings(); refresh(); });
   const refBtn =qs('#refresh');if(refBtn)  refBtn.addEventListener('click',()=>{ refresh(); });
   const addBtn =qs('#m-add');  if(addBtn)  addBtn.addEventListener('click',addTask);
+  const importBtn=qs('#m-import'); if(importBtn) importBtn.addEventListener('click',importTargets);
 
   const pasteEl = document.getElementById('paste');
   const previewEl = document.getElementById('preview');
@@ -699,6 +808,10 @@ function formatSubmittedList(tasks){
 
   document.querySelectorAll('.tab').forEach(b=>{
     b.addEventListener('click',()=>{
+      if (!state.admin && (b.dataset.tab==='manage' || b.dataset.tab==='setup')) {
+        setStatus('Admin key required to open that tab.');
+        return;
+      }
       document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
       b.classList.add('active');
       const id=b.dataset.tab;
