@@ -151,6 +151,7 @@ button:hover { border-color: #3a5499; }
           <button id="m-import">Import Targets</button>
           <div class="muted">Blank lines are ignored. Target ID and notes are optional.</div>
         </div>
+        <div id="m-import-summary" class="mono" hidden></div>
       </div></div>
     </section>
 
@@ -679,9 +680,21 @@ function parseImportTarget(line){
   return { targetName: name, targetId, notes };
 }
 
+function setImportSummary(lines){
+  const el = qs('#m-import-summary');
+  if (!el) return;
+  const list = Array.isArray(lines) ? lines.filter(Boolean) : [lines].filter(Boolean);
+  el.hidden = list.length === 0;
+  el.textContent = list.join('\n');
+}
+
+function delay(ms){
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 function extractImportTargets(raw){
   const text = String(raw || '');
-  const explicitMatches = Array.from(text.matchAll(/^\s*([A-Za-z0-9_][A-Za-z0-9_\- ]*?)\s*\[(\d{3,})\]\s*$/gm));
+  const explicitMatches = Array.from(text.matchAll(/^\s*([^\[\]\n]+?)\s*\[(\d{3,})\]\b.*$/gm));
   if (explicitMatches.length) {
     return explicitMatches.map(match => ({
       targetName: match[1].trim(),
@@ -714,11 +727,13 @@ async function importTargets(){
 
   if (parseErrors.length) {
     setStatus('Import blocked: ' + parseErrors[0]);
+    setImportSummary(['Import blocked', parseErrors[0]]);
     return;
   }
 
   if (!parsed.length) {
     setStatus('Import blocked: no valid targets were found in the pasted text.');
+    setImportSummary(['Import blocked', 'No valid targets were found in the pasted text.']);
     return;
   }
 
@@ -735,12 +750,18 @@ async function importTargets(){
     unique.push(item);
   });
 
+  setImportSummary([
+    'Detected ' + parsed.length + ' target line(s).',
+    'Prepared ' + unique.length + ' unique target(s) for import.' + (skipped ? ' Skipping ' + skipped + ' duplicate line(s).' : '')
+  ]);
+
   let added = 0;
   const failed = [];
   for (const item of unique) {
     try{
       await call('', 'POST', { action:'add', targetName:item.targetName, targetId:item.targetId, notes:item.notes });
       added += 1;
+      await delay(120);
     }catch(e){
       failed.push(item.targetName + ': ' + String(e.message || e));
     }
@@ -753,6 +774,14 @@ async function importTargets(){
   if (skipped) parts.push('Skipped ' + skipped + ' duplicate line(s).');
   if (failed.length) parts.push('Failed ' + failed.length + ' target(s): ' + failed[0]);
   setStatus(parts.join(' '));
+  setImportSummary([
+    'Detected ' + parsed.length + ' target line(s).',
+    'Prepared ' + unique.length + ' unique target(s).',
+    'Imported ' + added + ' target(s).',
+    skipped ? 'Skipped ' + skipped + ' duplicate line(s).' : '',
+    failed.length ? 'Failed ' + failed.length + ' target(s).' : 'Imported all prepared targets successfully.',
+    failed.length ? failed.slice(0, 8).join('\n') : ''
+  ]);
 }
 
 
