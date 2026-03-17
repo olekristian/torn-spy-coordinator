@@ -679,28 +679,46 @@ function parseImportTarget(line){
   return { targetName: name, targetId, notes };
 }
 
+function extractImportTargets(raw){
+  const text = String(raw || '');
+  const explicitMatches = Array.from(text.matchAll(/^\s*([A-Za-z0-9_][A-Za-z0-9_\- ]*?)\s*\[(\d{3,})\]\s*$/gm));
+  if (explicitMatches.length) {
+    return explicitMatches.map(match => ({
+      targetName: match[1].trim(),
+      targetId: match[2].trim(),
+      notes: ''
+    }));
+  }
+
+  return text
+    .split('\n')
+    .map(line => parseImportTarget(line))
+    .filter(Boolean);
+}
+
 async function importTargets(){
   const bulkEl = qs('#m-bulk');
   const raw = bulkEl ? bulkEl.value : '';
-  const rows = String(raw || '').split('\n').map(line => line.trim()).filter(Boolean);
-  if (!rows.length) {
+  if (!String(raw || '').trim()) {
     alert('Paste one or more targets to import.');
     return;
   }
 
   const parsed = [];
   const parseErrors = [];
-  rows.forEach((line, index) => {
-    try{
-      const item = parseImportTarget(line);
-      if (item) parsed.push(item);
-    }catch(e){
-      parseErrors.push('Line ' + (index + 1) + ': ' + (e.message || e));
-    }
-  });
+  try{
+    parsed.push(...extractImportTargets(raw));
+  }catch(e){
+    parseErrors.push(String(e.message || e));
+  }
 
   if (parseErrors.length) {
     setStatus('Import blocked: ' + parseErrors[0]);
+    return;
+  }
+
+  if (!parsed.length) {
+    setStatus('Import blocked: no valid targets were found in the pasted text.');
     return;
   }
 
