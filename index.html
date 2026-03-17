@@ -620,7 +620,7 @@ async function submitSpy(id){
     if (task.targetId && p.id && String(task.targetId) !== String(p.id)) {
       throw new Error('Parsed target ID ' + p.id + ' does not match claimed task ID ' + task.targetId + '.');
     }
-    if (!task.targetId && task.targetName && p.name && task.targetName.trim().toLowerCase() !== p.name.trim().toLowerCase()) {
+    if (!task.targetId && task.targetName && p.name && normalizeTargetName(task.targetName) !== normalizeTargetName(p.name)) {
       throw new Error('Parsed target name ' + p.name + ' does not match claimed task ' + task.targetName + '.');
     }
 
@@ -678,6 +678,13 @@ function parseImportTarget(line){
   const notes = hasNumericId ? trimmed.slice(2).join(' | ').trim() : trimmed.slice(1).join(' | ').trim();
 
   return { targetName: name, targetId, notes };
+}
+
+function normalizeTargetName(name){
+  return String(name || '')
+    .replace(/\s*\[\d{3,}\]\s*$/,'')
+    .trim()
+    .toLowerCase();
 }
 
 function setImportSummary(lines){
