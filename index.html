@@ -92,7 +92,7 @@ button:hover { border-color: #3a5499; }
 <p class="sub">Internal coordinator for Stat Spies. Claim, submit, and standardize results.</p>
     <div class="bar">
       <input id="me" placeholder="Your display name" style="width:220px">
-      <input id="api-key" placeholder="API Key (optional)" style="width:220px">
+      <input id="api-key" placeholder="Access Code" style="width:220px">
       <input id="adm" placeholder="Admin Key (admins only)" style="width:220px">
       <button id="save">Save</button>
       <button id="refresh">Refresh</button>
@@ -329,6 +329,7 @@ function saveSettings(){
 
 async function call(path, method='GET', body){
   if(!state.api) throw new Error('API not configured');
+  if(!state.key) throw new Error('Access code missing. Enter the access code and press Save.');
 
   // Build URL + query with api key and admin key
   let url = state.api + path;
