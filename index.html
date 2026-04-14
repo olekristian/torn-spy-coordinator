@@ -175,6 +175,7 @@ const DEFAULT_KEY = "";
 // ===== Helpers =====
 function qs(sel){ return document.querySelector(sel); }
 function setStatus(msg){ const e=qs('#err'); if(e) e.textContent = msg || ''; }
+function normalizeEmployeeName(name){ return String(name || '').trim().toLowerCase(); }
 
 const state={ 
   tasks:[], 
@@ -564,7 +565,7 @@ function render(){
 
     const row=document.createElement('div'); row.className='row'; row.style.marginTop='8px'; bd.appendChild(row);
     if(t.status==='open'){ const b=document.createElement('button'); b.textContent='Claim'; b.onclick=function(){claim(t.id)}; row.appendChild(b); }
-    if(t.status==='claimed' && t.claimedBy===state.me){
+    if(t.status==='claimed' && normalizeEmployeeName(t.claimedBy)===normalizeEmployeeName(state.me)){
       const u=document.createElement('button'); u.textContent='Unclaim'; u.onclick=function(){unclaim(t.id)}; row.appendChild(u);
       const hint=document.createElement('div'); hint.className='muted'; hint.style.margin='10px 0 6px'; hint.textContent='Paste one or more spy logs for this target. We will merge and auto-calculate the total.'; bd.appendChild(hint);
       const ta=document.createElement('textarea'); ta.id='paste-'+t.id; ta.placeholder='Paste spy text here'; bd.appendChild(ta);
@@ -590,8 +591,8 @@ function render(){
 
 // ===== Actions =====
 async function refresh(){ setStatus(''); try{ const data=await call('?action=list','GET'); state.tasks=data.tasks||[]; render(); }catch(e){ setStatus('Refresh failed: '+String(e.message||e)); }enforceVisibility(); }
-async function claim(id){ if(!state.me){ alert('Set your display name first.'); return; } try{ await call('', 'POST', {action:'claim', id, employee: state.me}); await refresh(); }catch(e){ setStatus('Claim failed: '+String(e.message||e)); } }
-async function unclaim(id){ try{ await call('', 'POST', {action:'unclaim', id, employee: state.me}); await refresh(); }catch(e){ setStatus('Unclaim failed: '+String(e.message||e)); } }
+async function claim(id){ if(!state.me){ alert('Set your display name first.'); return; } try{ await call('', 'POST', {action:'claim', id, employee: state.me.trim()}); await refresh(); }catch(e){ setStatus('Claim failed: '+String(e.message||e)); } }
+async function unclaim(id){ try{ await call('', 'POST', {action:'unclaim', id, employee: state.me.trim()}); await refresh(); }catch(e){ setStatus('Unclaim failed: '+String(e.message||e)); } }
 async function submitSpy(id){
   if(!state.me){ alert('Set your display name first.'); return; }
   try{
@@ -641,7 +642,7 @@ async function submitSpy(id){
     };
 
     await call('', 'POST', {
-      action:'submit', id, employee: state.me,
+      action:'submit', id, employee: state.me.trim(),
       name: payload.name, targetId: payload.targetId, payload
     });
 
