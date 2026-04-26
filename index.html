@@ -182,8 +182,19 @@ const state={
   me:"", 
   api: DEFAULT_API, 
   key: DEFAULT_KEY, 
-  admin:"" 
+  admin:"",
+  busyTaskIds: new Set()
 };
+
+function setTaskBusy(id, busy){
+  const key = String(id);
+  if (busy) state.busyTaskIds.add(key);
+  else state.busyTaskIds.delete(key);
+}
+
+function isTaskBusy(id){
+  return state.busyTaskIds.has(String(id));
+}
 
 function completeStats(p){
   const toInt = (x)=> x==null ? null : Math.round(Number(x));
@@ -565,13 +576,27 @@ function render(){
     stat.textContent = t.claimedBy? ('Claimed by '+t.claimedBy) : 'Not claimed'; bd.appendChild(stat);
 
     const row=document.createElement('div'); row.className='row'; row.style.marginTop='8px'; bd.appendChild(row);
-    if(t.status==='open'){ const b=document.createElement('button'); b.textContent='Claim'; b.onclick=function(){claim(t.id)}; row.appendChild(b); }
+    if(t.status==='open'){
+      const b=document.createElement('button');
+      b.textContent = isTaskBusy(t.id) ? 'Claiming...' : 'Claim';
+      b.disabled = isTaskBusy(t.id);
+      b.onclick=function(){claim(t.id)};
+      row.appendChild(b);
+    }
     if(t.status==='claimed' && normalizeEmployeeName(t.claimedBy)===normalizeEmployeeName(state.me)){
-      const u=document.createElement('button'); u.textContent='Unclaim'; u.onclick=function(){unclaim(t.id)}; row.appendChild(u);
+      const u=document.createElement('button');
+      u.textContent = isTaskBusy(t.id) ? 'Working...' : 'Unclaim';
+      u.disabled = isTaskBusy(t.id);
+      u.onclick=function(){unclaim(t.id)};
+      row.appendChild(u);
       const hint=document.createElement('div'); hint.className='muted'; hint.style.margin='10px 0 6px'; hint.textContent='Paste one or more spy logs for this target. We will merge and auto-calculate the total.'; bd.appendChild(hint);
       const ta=document.createElement('textarea'); ta.id='paste-'+t.id; ta.placeholder='Paste spy text here'; bd.appendChild(ta);
       const row2=document.createElement('div'); row2.className='row'; row2.style.marginTop='8px'; bd.appendChild(row2);
-      const s=document.createElement('button'); s.textContent='Submit Result'; s.onclick=function(){submitSpy(t.id)}; row2.appendChild(s);
+      const s=document.createElement('button');
+      s.textContent = isTaskBusy(t.id) ? 'Submitting...' : 'Submit Result';
+      s.disabled = isTaskBusy(t.id);
+      s.onclick=function(){submitSpy(t.id)};
+      row2.appendChild(s);
     }
 
     tasksEl.appendChild(card);
@@ -592,11 +617,52 @@ function render(){
 
 // ===== Actions =====
 async function refresh(){ setStatus(''); try{ const data=await call('?action=list','GET'); state.tasks=data.tasks||[]; render(); }catch(e){ setStatus('Refresh failed: '+String(e.message||e)); }enforceVisibility(); }
-async function claim(id){ if(!state.me){ alert('Set your display name first.'); return; } try{ await call('', 'POST', {action:'claim', id, employee: state.me.trim()}); await refresh(); }catch(e){ setStatus('Claim failed: '+String(e.message||e)); } }
-async function unclaim(id){ try{ await call('', 'POST', {action:'unclaim', id, employee: state.me.trim()}); await refresh(); }catch(e){ setStatus('Unclaim failed: '+String(e.message||e)); } }
+async function claim(id){
+  if(!state.me){ alert('Set your display name first.'); return; }
+  const task = state.tasks.find(t => String(t.id)===String(id));
+  if (task) {
+    task.status = 'claimed';
+    task.claimedBy = state.me.trim();
+    setTaskBusy(id, true);
+    render();
+  }
+  setStatus('Claiming target...');
+  try{
+    await call('', 'POST', {action:'claim', id, employee: state.me.trim()});
+    setStatus('Claim registered.');
+    setTaskBusy(id, false);
+    refresh();
+  }catch(e){
+    setTaskBusy(id, false);
+    await refresh();
+    setStatus('Claim failed: '+String(e.message||e));
+  }
+}
+async function unclaim(id){
+  const task = state.tasks.find(t => String(t.id)===String(id));
+  if (task) {
+    task.status = 'open';
+    task.claimedBy = '';
+    setTaskBusy(id, true);
+    render();
+  }
+  setStatus('Removing claim...');
+  try{
+    await call('', 'POST', {action:'unclaim', id, employee: state.me.trim()});
+    setStatus('Claim removed.');
+    setTaskBusy(id, false);
+    refresh();
+  }catch(e){
+    setTaskBusy(id, false);
+    await refresh();
+    setStatus('Unclaim failed: '+String(e.message||e));
+  }
+}
 async function submitSpy(id){
   if(!state.me){ alert('Set your display name first.'); return; }
   try{
+    setTaskBusy(id, true);
+    render();
     const ta = document.getElementById('paste-'+id);
     const raw = ta.value || '';
 
@@ -648,8 +714,12 @@ async function submitSpy(id){
     });
 
     ta.value='';
-    await refresh();
+    setStatus('Result submitted.');
+    setTaskBusy(id, false);
+    refresh();
   }catch(e){
+    setTaskBusy(id, false);
+    render();
     const err = document.getElementById('err');
     if (err) err.textContent = 'Submit failed: ' + (e.message||e);
   }
