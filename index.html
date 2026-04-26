@@ -101,12 +101,27 @@ button:hover { border-color: #3a5499; }
 
 
     <div class="tabs">
+      <button class="tab" data-tab="tutorial">Tutorial</button>
       <button class="tab active" data-tab="board">Claim Board</button>
       <!--<button class="tab" data-tab="submit">Submit</button>-->
       <button id="tab-manage-btn" class="tab" data-tab="manage">Manager</button>
       <!-- <button id="tabbtn-setup" class="tab" data-tab="setup">Setup</button> -->
 
     </div>
+
+    <section id="tab-tutorial" hidden>
+      <div class="card"><div class="hd">How To Use This Page</div><div class="bd">
+        <ol>
+          <li>Enter your display name at the top of the page.</li>
+          <li>Employees must contact <b>Kattemannen [2670127]</b> to get the access code.</li>
+          <li>Enter the access code and press <b>Save</b>, then press <b>Refresh</b>.</li>
+          <li>Go to <b>Claim Board</b> and press <b>Claim</b> on the target you are working on.</li>
+          <li>Paste the spy result into the target card and press <b>Submit Result</b>.</li>
+          <li>If you receive many targets at once, managers can use <b>Manager → Mass Import</b>.</li>
+          <li>If something looks wrong, press <b>Refresh</b> and check the message shown next to the top buttons.</li>
+        </ol>
+      </div></div>
+    </section>
 
     <section id="tab-board">
       <div class="card"><div class="hd">Open & Claimed</div><div class="bd">
@@ -941,7 +956,7 @@ function formatSubmittedList(tasks){
       document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
       b.classList.add('active');
       const id=b.dataset.tab;
-      ['board','submit','manage','setup'].forEach(s=>{
+      ['tutorial','board','submit','manage','setup'].forEach(s=>{
         const sec=qs('#tab-'+s); if(sec) sec.hidden = (s!==id);
       });
     });
