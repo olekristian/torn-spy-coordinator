@@ -271,7 +271,7 @@ function mergeTwo(a, b){
   out.defense   = pickNum(out.defense,   b.defense);
 
   // Viktig: vi ignorerer innlimt "total" – settes senere ut fra 4 stats
-  out.total = null;
+  out.total     = pickNum(out.total,     b.total);
 
   return out;
 }
@@ -288,12 +288,13 @@ function mergeSpiesStrictTotal(spyArray){
 
   for (const p of spyArray){
     const k = keyFor(p);
-    if (!map.has(k)) map.set(k, { ...p, total:null });
+    if (!map.has(k)) map.set(k, { ...p });
     else map.set(k, mergeTwo(map.get(k), p));
   }
 
   // Etter merge: hvis alle 4 stats finnes → total = sum; ellers null
   return Array.from(map.values()).map(x=>{
+    completeStats(x);
     const has4 = [x.strength,x.speed,x.dexterity,x.defense].every(v=>v!=null);
     x.total = has4 ? (x.strength + x.speed + x.dexterity + x.defense) : null;
     return x;
@@ -403,6 +404,7 @@ function sanitizeInput(raw){
 function parseNumberToken(s){
   if(!s) return null;
   let x = String(s).trim().toLowerCase().replace(/[, ]+/g,''); // fjern komma OG spaces
+  if (!x || /^(?:n\/a|na|unknown|\?)$/.test(x)) return null;
   const m = x.match(/^(\d+(?:\.\d+)?)([kmbt])?$/i);
   if (m){
     const base = parseFloat(m[1]);
@@ -464,7 +466,7 @@ function parseStats(raw){
   const t = sanitizeInput(raw);
   const find = (labels)=>{
     const r = new RegExp(
-      '(?:^|\\n|\\r|\\s)(?:'+labels.join('|')+')\\s*[:=\\-]\\s*([\\d., ]+|\\d+(?:\\.\\d+)?[kmbt])',
+      '(?:^|\\n|\\r|\\s)(?:'+labels.join('|')+')\\s*[:=\\-]\\s*(n\\/a|na|unknown|\\?|\\d[\\d., ]*|\\d+(?:\\.\\d+)?[kmbt])',
       'i'
     );
     const m = t.match(r);
@@ -475,7 +477,7 @@ function parseStats(raw){
     speed:    find(['speed','spd','sp']),
     dexterity:find(['dexterity','dex']),
     defense:  find(['defense','defence','def']),
-    total:    find(['total','sum'])
+    total:    find(['total battle stats','total stats','total','sum'])
   };
 }
 
