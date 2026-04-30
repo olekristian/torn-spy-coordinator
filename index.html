@@ -65,6 +65,7 @@ button:hover { border-color: #3a5499; }
 .card .hd { padding: 14px 14px 0; font-weight: 600; }
 .card .bd { padding: 14px; }
 .muted { color: var(--muted); }
+.warn-text { color: var(--warn); }
 .row { display: flex; gap: 8px; align-items: center; }
 .pill {
   display: inline-block;
@@ -549,6 +550,55 @@ function formatBlock(p){
   ].join('\n');
 }
 
+function getMissingStats(p){
+  const missing = [];
+  if (p.strength==null) missing.push('Strength');
+  if (p.speed==null) missing.push('Speed');
+  if (p.dexterity==null) missing.push('Dexterity');
+  if (p.defense==null) missing.push('Defense');
+  return missing;
+}
+
+function restoreTaskPaste(id, raw){
+  const ta = document.getElementById('paste-'+id);
+  if (ta) ta.value = raw || '';
+}
+
+function updateClaimPasteWarning(id){
+  const ta = document.getElementById('paste-'+id);
+  const msg = document.getElementById('warn-'+id);
+  if (!ta || !msg) return;
+  const raw = ta.value || '';
+  if (!raw.trim()) {
+    msg.textContent = '';
+    return;
+  }
+  try{
+    const blocks = extractSpyBlocks(raw);
+    const merged = mergeSpiesStrictTotal(blocks.map(b => parseSpy(b)));
+    if (!merged.length) {
+      msg.textContent = '';
+      return;
+    }
+    if (merged.length > 1) {
+      msg.textContent = 'Warning: multiple targets detected in this paste.';
+      msg.className = 'muted warn-text';
+      return;
+    }
+    const missing = getMissingStats(merged[0]);
+    if (missing.length) {
+      msg.textContent = 'Warning: partial spy. Missing ' + missing.join(', ') + '. You can still submit.';
+      msg.className = 'muted warn-text';
+      return;
+    }
+    msg.textContent = 'Full spy detected.';
+    msg.className = 'muted';
+  }catch(e){
+    msg.textContent = 'Warning: could not fully parse this paste yet.';
+    msg.className = 'muted warn-text';
+  }
+}
+
 function isAdmin(){
   // Hvis Owner ikke er satt, vis alt (enkelt å teste).
   // Sett Owner til ditt eget navn for å låse ned.
@@ -607,6 +657,8 @@ function render(){
       row.appendChild(u);
       const hint=document.createElement('div'); hint.className='muted'; hint.style.margin='10px 0 6px'; hint.textContent='Paste one or more spy logs for this target. We will merge and auto-calculate the total.'; bd.appendChild(hint);
       const ta=document.createElement('textarea'); ta.id='paste-'+t.id; ta.placeholder='Paste spy text here'; bd.appendChild(ta);
+      const warn=document.createElement('div'); warn.id='warn-'+t.id; warn.className='muted'; warn.style.marginTop='6px'; bd.appendChild(warn);
+      ta.addEventListener('input', function(){ updateClaimPasteWarning(t.id); });
       const row2=document.createElement('div'); row2.className='row'; row2.style.marginTop='8px'; bd.appendChild(row2);
       const s=document.createElement('button');
       s.textContent = isTaskBusy(t.id) ? 'Submitting...' : 'Submit Result';
@@ -676,11 +728,14 @@ async function unclaim(id){
 }
 async function submitSpy(id){
   if(!state.me){ alert('Set your display name first.'); return; }
+  let raw = '';
   try{
     const ta = document.getElementById('paste-'+id);
-    const raw = ta ? (ta.value || '') : '';
+    raw = ta ? (ta.value || '') : '';
     setTaskBusy(id, true);
     render();
+    restoreTaskPaste(id, raw);
+    updateClaimPasteWarning(id);
 
     // 1) Del opp & parse alle blokker
     const blocks  = extractSpyBlocks(raw);
@@ -711,6 +766,20 @@ async function submitSpy(id){
     // Re-kalkuler streng total (i tilfelle)
     const has4 = [p.strength,p.speed,p.dexterity,p.defense].every(v=>v!=null);
     p.total = has4 ? (p.strength + p.speed + p.dexterity + p.defense) : null;
+    const missing = getMissingStats(p);
+    if (missing.length) {
+      const shouldContinue = window.confirm(
+        'This is a partial spy. Missing: ' + missing.join(', ') + '. Submit anyway?'
+      );
+      if (!shouldContinue) {
+        setTaskBusy(id, false);
+        render();
+        restoreTaskPaste(id, raw);
+        updateClaimPasteWarning(id);
+        setStatus('Submit cancelled. Partial spy was not submitted.');
+        return;
+      }
+    }
 
     const payload = {
       name: p.name,
@@ -736,6 +805,8 @@ async function submitSpy(id){
   }catch(e){
     setTaskBusy(id, false);
     render();
+    restoreTaskPaste(id, raw);
+    updateClaimPasteWarning(id);
     const err = document.getElementById('err');
     if (err) err.textContent = 'Submit failed: ' + (e.message||e);
   }
