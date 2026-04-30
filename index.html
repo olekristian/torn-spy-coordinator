@@ -106,7 +106,6 @@ button:hover { border-color: #3a5499; }
       <button class="tab active" data-tab="board">Claim Board</button>
       <!--<button class="tab" data-tab="submit">Submit</button>-->
       <button id="tab-manage-btn" class="tab" data-tab="manage">Manager</button>
-      <!-- <button id="tabbtn-setup" class="tab" data-tab="setup">Setup</button> -->
 
     </div>
 
@@ -170,18 +169,6 @@ button:hover { border-color: #3a5499; }
       </div></div>
     </section>
 
-    <section id="tab-setup" hidden>
-      <div class="card"><div class="hd">Setup</div><div class="bd">
-        <ol>
-          <li>Create a Google Sheet tab named <b>Tasks</b> with headers (row 1):<br>
-            <span class="mono">id | createdAt | status | targetName | targetId | notes | claimedBy | claimedAt | submittedAt | payloadJson | formatted</span>
-          </li>
-          <li>Open <b>Extensions ? Apps Script</b>. Paste the backend code I provided into <b>Code.gs</b>. Deploy: <b>Deploy ? New deployment ? Web app</b>. Copy the URL.</li>
-          <li>Paste that URL into <b>API Base URL</b> above. (Optional) set a Script property <b>API_KEY</b> and paste the same value here.</li>
-        </ol>
-        <p class="muted">Host this file anywhere: GitHub Pages, Netlify, or just open it locally in your browser.</p>
-      </div></div>
-    </section>
   </div>
 
 <script>
@@ -608,14 +595,12 @@ function isAdmin(){
 function enforceVisibility(){
   const isAdminUI = !!state.admin; // show admin UI only if admin key present locally
   const rc = document.getElementById('recent-card'); if(rc) rc.style.display = isAdminUI ? '' : 'none';
-  const setupBtn = document.getElementById('tab-setup-btn'); if(setupBtn) setupBtn.style.display = isAdminUI ? '' : 'none';
   const manageBtn = document.getElementById('tab-manage-btn'); if(manageBtn) manageBtn.style.display = isAdminUI ? '' : 'none';
   const tabManage = document.getElementById('tab-manage'); if(tabManage) tabManage.hidden = !isAdminUI;
-  const tabSetup = document.getElementById('tab-setup'); if(tabSetup) tabSetup.hidden = !isAdminUI;
 
   // If on a hidden tab, jump back to Board
   const active = document.querySelector('.tab.active');
-  if (!isAdminUI && active && (active.dataset.tab==='setup' || active.dataset.tab==='manage')) {
+  if (!isAdminUI && active && active.dataset.tab==='manage') {
     document.querySelector('[data-tab="board"]').click();
   }
 }
@@ -1083,14 +1068,14 @@ function formatSubmittedList(tasks){
 
   document.querySelectorAll('.tab').forEach(b=>{
     b.addEventListener('click',()=>{
-      if (!state.admin && (b.dataset.tab==='manage' || b.dataset.tab==='setup')) {
+      if (!state.admin && b.dataset.tab==='manage') {
         setStatus('Admin key required to open that tab.');
         return;
       }
       document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
       b.classList.add('active');
       const id=b.dataset.tab;
-      ['tutorial','board','submit','manage','setup'].forEach(s=>{
+      ['tutorial','board','submit','manage'].forEach(s=>{
         const sec=qs('#tab-'+s); if(sec) sec.hidden = (s!==id);
       });
     });
