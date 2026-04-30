@@ -116,7 +116,27 @@ function bootstrapPayload(userId) {
     : memberships[0]
       ? db.prepare("SELECT * FROM invitations WHERE firm_id = ? ORDER BY created_at DESC").all(memberships[0].firm_id)
       : [];
-  return { user, memberships, firms, sellerProfiles: sellers, orders, orderItems: items, payments, payouts, notifications, invitations };
+  const userIds = new Set([user.id]);
+  memberships.forEach((membership) => userIds.add(membership.user_id));
+  orders.forEach((order) => {
+    userIds.add(order.requested_by_user_id);
+    userIds.add(order.created_by_user_id);
+  });
+  items.forEach((item) => {
+    if (item.claimed_by_user_id) userIds.add(item.claimed_by_user_id);
+    if (item.completed_by_user_id) userIds.add(item.completed_by_user_id);
+    if (item.submitted_by_user_id) userIds.add(item.submitted_by_user_id);
+  });
+  payouts.forEach((payout) => userIds.add(payout.user_id));
+  sellers.forEach((seller) => userIds.add(seller.user_id));
+  invitations.forEach((invite) => {
+    userIds.add(invite.invited_by_user_id);
+    if (invite.accepted_by_user_id) userIds.add(invite.accepted_by_user_id);
+  });
+  const placeholders = Array.from(userIds).map(() => "?").join(", ");
+  const users = db.prepare(`SELECT id, name, email, created_at FROM users WHERE id IN (${placeholders})`).all(...Array.from(userIds));
+  const apiConsents = db.prepare("SELECT * FROM api_consents WHERE user_id = ? ORDER BY consented_at DESC").all(userId);
+  return { user, users, memberships, firms, sellerProfiles: sellers, orders, orderItems: items, payments, payouts, notifications, invitations, apiConsents };
 }
 
 app.get("/api/health", (_req, res) => {
@@ -215,6 +235,24 @@ app.post("/api/invites/accept", (req, res) => {
 
 app.get("/api/bootstrap", authRequired, (req, res) => {
   res.json(bootstrapPayload(req.auth.user.id));
+});
+
+app.post("/api/api-consents", authRequired, (req, res) => {
+  db.prepare("UPDATE api_consents SET status = 'replaced' WHERE user_id = ? AND status = 'active'").run(req.auth.user.id);
+  db.prepare("INSERT INTO api_consents (id, user_id, masked_key, scope, note, status, consented_at, revoked_at) VALUES (?, ?, ?, ?, ?, 'active', ?, '')").run(
+    createId("consent"),
+    req.auth.user.id,
+    String(req.body.maskedKey || ""),
+    String(req.body.scope || ""),
+    String(req.body.note || ""),
+    now()
+  );
+  res.status(201).json({ ok: true });
+});
+
+app.delete("/api/api-consents/active", authRequired, (req, res) => {
+  db.prepare("UPDATE api_consents SET status = 'revoked', revoked_at = ? WHERE user_id = ? AND status = 'active'").run(now(), req.auth.user.id);
+  res.json({ ok: true });
 });
 
 app.post("/api/members", authRequired, requireRole(["super_admin", "lawfirm_admin", "coordinator"]), (req, res) => {
