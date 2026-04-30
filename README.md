@@ -4,6 +4,8 @@
 
 `portal.html` is the finished local multi-firm portal MVP.
 
+`server.js` plus `src/` provide a real local backend using Express and SQLite.
+
 ## Portal Summary
 
 `portal.html` includes:
@@ -26,4 +28,35 @@
 
 ## Important Limitation
 
-This repo still has no real backend. `portal.html` is a browser-based local MVP that stores data in local storage on the current machine and browser profile. It does not provide secure production authentication, encrypted server-side key storage, or live Torn log automation.
+The frontend portal still stores its own browser-local state unless it is explicitly wired to the backend. The new backend in this repo provides real persistence and auth locally, but the current `portal.html` has not yet been refactored to call those API routes automatically.
+
+## Local Backend
+
+Install dependencies and start the server:
+
+```bash
+npm install
+npm start
+```
+
+The server will:
+
+- create `data/portal.db`
+- seed demo users and a demo order
+- serve the static files from the repo root
+- expose JSON API routes under `/api`
+
+Useful routes:
+
+- `POST /api/auth/login`
+- `GET /api/bootstrap`
+- `POST /api/register/seller`
+- `POST /api/register/client`
+- `POST /api/invites/accept`
+- `POST /api/orders`
+- `POST /api/items/:itemId/claim`
+- `POST /api/items/:itemId/submit`
+- `POST /api/payments`
+- `PATCH /api/payouts/:payoutId/status`
+
+This is now a proper local full-stack base, but it is still not a hardened production deployment. There is no refresh-token flow, RBAC audit layer, encrypted secrets vault, or live Torn API ingestion yet.
