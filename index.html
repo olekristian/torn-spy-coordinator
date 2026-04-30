@@ -1,9 +1,9 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Bring Em Closer — Stat Spy Coordinator</title>
+<title>Bring Em Closer � Stat Spy Coordinator</title>
 <style>
 :root {
   --bg: #0f1a13;
@@ -65,6 +65,17 @@ button:hover { border-color: #3a5499; }
 .card .hd { padding: 14px 14px 0; font-weight: 600; }
 .card .bd { padding: 14px; }
 .muted { color: var(--muted); }
+.notice-banner {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid #2a3a63;
+  border-radius: 12px;
+  background: #0e1626;
+}
+.notice-banner a {
+  color: #9fd5ff;
+  font-weight: 600;
+}
 .warn-text { color: var(--warn); }
 .row { display: flex; gap: 8px; align-items: center; }
 .pill {
@@ -89,7 +100,8 @@ button:hover { border-color: #3a5499; }
 </head>
 <body>
   <div class="wrap">
-<h1>Bring Em Closer Law Firm — Torn City</h1>
+<div class="notice-banner">Operational board. The new portal is being built in parallel at <a href="./portal.html">portal.html</a>.</div>
+<h1>Bring Em Closer Law Firm � Torn City</h1>
 <p class="sub">Internal coordinator for Stat Spies. Claim, submit, and standardize results.</p>
     <div class="bar">
       <input id="me" placeholder="Your display name" style="width:220px">
@@ -141,7 +153,7 @@ button:hover { border-color: #3a5499; }
     </section>
 
     <section id="tab-submit" hidden>
-      <div class="card"><div class="hd">Submit Spy (Ad‑hoc)</div><div class="bd grid">
+      <div class="card"><div class="hd">Submit Spy (Ad-hoc)</div><div class="bd grid">
         <textarea id="paste" placeholder="Paste any spy text here..."></textarea>
         <div class="mono" id="preview"></div>
         <div class="row">
@@ -176,7 +188,7 @@ button:hover { border-color: #3a5499; }
           <li>Create a Google Sheet tab named <b>Tasks</b> with headers (row 1):<br>
             <span class="mono">id | createdAt | status | targetName | targetId | notes | claimedBy | claimedAt | submittedAt | payloadJson | formatted</span>
           </li>
-          <li>Open <b>Extensions → Apps Script</b>. Paste the backend code I provided into <b>Code.gs</b>. Deploy: <b>Deploy → New deployment → Web app</b>. Copy the URL.</li>
+          <li>Open <b>Extensions ? Apps Script</b>. Paste the backend code I provided into <b>Code.gs</b>. Deploy: <b>Deploy ? New deployment ? Web app</b>. Copy the URL.</li>
           <li>Paste that URL into <b>API Base URL</b> above. (Optional) set a Script property <b>API_KEY</b> and paste the same value here.</li>
         </ol>
         <p class="muted">Host this file anywhere: GitHub Pages, Netlify, or just open it locally in your browser.</p>
@@ -271,13 +283,13 @@ function mergeTwo(a, b){
   out.dexterity = pickNum(out.dexterity, b.dexterity);
   out.defense   = pickNum(out.defense,   b.defense);
 
-  // Viktig: vi ignorerer innlimt "total" – settes senere ut fra 4 stats
+  // Viktig: vi ignorerer innlimt "total" � settes senere ut fra 4 stats
   out.total     = pickNum(out.total,     b.total);
 
   return out;
 }
 
-// Slå sammen mange del-logger for samme spiller og kalkuler streng total
+// Sl� sammen mange del-logger for samme spiller og kalkuler streng total
 function mergeSpiesStrictTotal(spyArray){
   const map = new Map();
   const keyFor = (p)=>{
@@ -293,7 +305,7 @@ function mergeSpiesStrictTotal(spyArray){
     else map.set(k, mergeTwo(map.get(k), p));
   }
 
-  // Etter merge: hvis alle 4 stats finnes → total = sum; ellers null
+  // Etter merge: hvis alle 4 stats finnes ? total = sum; ellers null
   return Array.from(map.values()).map(x=>{
     completeStats(x);
     const has4 = [x.strength,x.speed,x.dexterity,x.defense].every(v=>v!=null);
@@ -394,9 +406,9 @@ function sanitizeInput(raw){
     .replace(/\r/g,'')        // CRLF -> LF
     .trim();
 
-  // Fjern prefiks som "1:", "2:", "-", "•" i linjestart (vanlig ved copy/paste)
+  // Fjern prefiks som "1:", "2:", "-", "�" i linjestart (vanlig ved copy/paste)
   t = t.split('\n').map(line =>
-    line.replace(/^\s*(?:\d+\s*:|[-–•*]\s*)\s*/, '')
+    line.replace(/^\s*(?:\d+\s*:|[-��*]\s*)\s*/, '')
   ).join('\n');
 
   return t;
@@ -424,7 +436,7 @@ function parseNameId(raw){
   let m = t.match(/^\s*Name\s*[:\-]?\s*([^\n\r\[]+?)\s*(?:\[(\d{3,})\])?\s*$/im);
   if (m) return { name: (m[1]||'').trim(), id: m[2] || '' };
 
-  // 2) Finn "[123]" og trekk navn fra samme linje (før [id]) eller linja over
+  // 2) Finn "[123]" og trekk navn fra samme linje (f�r [id]) eller linja over
   const idm = t.match(/\[(\d{3,})\]/);
   if (idm){
     const idx = idm.index;
@@ -433,7 +445,7 @@ function parseNameId(raw){
     const line = t.slice(ls, le === -1 ? t.length : le);
 
     let name = line
-      .replace(/\[[^\]]+\].*$/,'') // kutt ut [id] og etterfølgende
+      .replace(/\[[^\]]+\].*$/,'') // kutt ut [id] og etterf�lgende
       .replace(/^(?:Name|Target|Player|You\s+spied\s+on|Spied\s+on)\s*[:\-]?\s*/i,'')
       .replace(/\(.*?\)/g,'')
       .trim();
@@ -496,7 +508,7 @@ function completeStats(p){
   // Fyll Total fra 4/4
   if (a.total==null && known===4) a.total = parts[0]+parts[1]+parts[2]+parts[3];
 
-  // Fyll én manglende stat fra Total + 3/4
+  // Fyll �n manglende stat fra Total + 3/4
   if (a.total!=null && known===3){
     const miss = parts.findIndex(v=>v==null);
     const sumKnown = parts.reduce((s,v)=>s+(v||0),0);
@@ -600,8 +612,8 @@ function updateClaimPasteWarning(id){
 }
 
 function isAdmin(){
-  // Hvis Owner ikke er satt, vis alt (enkelt å teste).
-  // Sett Owner til ditt eget navn for å låse ned.
+  // Hvis Owner ikke er satt, vis alt (enkelt � teste).
+  // Sett Owner til ditt eget navn for � l�se ned.
   return state.owner ? state.me === state.owner : true;
 }
 
@@ -676,7 +688,7 @@ function render(){
       const card=document.createElement('div'); card.className='card';
       const bd=document.createElement('div'); bd.className='bd'; card.appendChild(bd);
       const title=document.createElement('div'); title.style.fontWeight='600'; title.textContent=(t.targetName||'Unknown') + (t.targetId? ' ['+t.targetId+']':'' ); bd.appendChild(title);
-      const by=document.createElement('div'); by.className='muted'; by.textContent='by ' + (t.claimedBy||'—'); bd.appendChild(by);
+      const by=document.createElement('div'); by.className='muted'; by.textContent='by ' + (t.claimedBy||'�'); bd.appendChild(by);
       const pre=document.createElement('div'); pre.className='mono'; pre.style.marginTop='8px'; pre.textContent=(t.formatted || (t.payload && t.payload.formatted) || ''); bd.appendChild(pre);
       recentEl.appendChild(card);
     });
@@ -1028,7 +1040,7 @@ function formatSubmittedList(tasks){
   const blocks = tasks
     .filter(t => t.status==='submitted')
     .map(t => {
-      // Bygg på nytt for å garantere at Total = sum(4)
+      // Bygg p� nytt for � garantere at Total = sum(4)
       const p = Object.assign({}, t.payload||{}, {
         name: t.targetName,
         targetId: t.targetId
@@ -1056,9 +1068,9 @@ function formatSubmittedList(tasks){
     pasteEl.addEventListener('input', ()=>{
       const blocks = extractSpyBlocks(pasteEl.value || '');
       const partials = blocks.map(b => parseSpy(b));   // parse hver blokk
-      const merged = mergeSpiesStrictTotal(partials);  // slå sammen pr. spiller
+      const merged = mergeSpiesStrictTotal(partials);  // sl� sammen pr. spiller
 
-      // Bygg forhåndsvisning: en formatBlock per sammenslått resultat
+      // Bygg forh�ndsvisning: en formatBlock per sammensl�tt resultat
       const listText = merged.map(p => formatBlock(p)).join('\n\n\n');
       previewEl.textContent = listText;
     });
