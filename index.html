@@ -675,10 +675,10 @@ async function unclaim(id){
 async function submitSpy(id){
   if(!state.me){ alert('Set your display name first.'); return; }
   try{
+    const ta = document.getElementById('paste-'+id);
+    const raw = ta ? (ta.value || '') : '';
     setTaskBusy(id, true);
     render();
-    const ta = document.getElementById('paste-'+id);
-    const raw = ta.value || '';
 
     // 1) Del opp & parse alle blokker
     const blocks  = extractSpyBlocks(raw);
