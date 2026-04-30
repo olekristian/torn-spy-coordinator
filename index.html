@@ -766,6 +766,31 @@ function parseImportTarget(line){
   return { targetName: name, targetId, notes };
 }
 
+function cleanImportedName(name){
+  return String(name || '')
+    .replace(/https?:\/\/\S+/gi,'')
+    .replace(/\bprofiles\.php\?XID=\d+\b/gi,'')
+    .replace(/\s*\[\d{3,}\]\s*/g,' ')
+    .replace(/\s*\(\d{3,}\)\s*/g,' ')
+    .replace(/\s+lvl\s+\d+\s*$/i,'')
+    .replace(/\s+-\s+lvl\s+\d+.*$/i,'')
+    .replace(/\s+-\s+xan\s+[\d,]+.*$/i,'')
+    .replace(/\s+inactive\b.*$/i,'')
+    .replace(/'s Profile\s*$/i,'')
+    .replace(/\bprofile\s*$/i,'')
+    .replace(/\s{2,}/g,' ')
+    .trim();
+}
+
+function isLikelyTargetName(name){
+  const cleaned = cleanImportedName(name);
+  if (!cleaned) return false;
+  if (cleaned.length < 2) return false;
+  if (/^(https?:\/\/|over\s+\d|under\s+\d|\d[\dmkmb.,\s-]*)$/i.test(cleaned)) return false;
+  if (/^(lvl|xan|inactive|profile)$/i.test(cleaned)) return false;
+  return /[A-Za-z]/.test(cleaned);
+}
+
 function normalizeTargetName(name){
   return String(name || '')
     .replace(/\s*\[\d{3,}\]\s*$/,'')
@@ -787,14 +812,51 @@ function delay(ms){
 
 function extractImportTargets(raw){
   const text = String(raw || '');
-  const explicitMatches = Array.from(text.matchAll(/^\s*([^\[\]\n]+?)\s*\[(\d{3,})\]\b.*$/gm));
-  if (explicitMatches.length) {
-    return explicitMatches.map(match => ({
-      targetName: match[1].trim(),
-      targetId: match[2].trim(),
-      notes: ''
-    }));
+  const lines = text.split('\n').map(line => line.trim());
+  const found = [];
+  const pushFound = (targetName, targetId, notes='')=>{
+    const cleaned = cleanImportedName(targetName);
+    if (!isLikelyTargetName(cleaned)) return;
+    if (!/^\d{3,}$/.test(String(targetId || '').trim())) return;
+    found.push({
+      targetName: cleaned,
+      targetId: String(targetId).trim(),
+      notes: notes.trim()
+    });
+  };
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!line) continue;
+
+    const bracketMatch = line.match(/^\s*([^\[\]\n]+?)\s*\[(\d{3,})\]\b(.*)$/i);
+    if (bracketMatch) {
+      pushFound(bracketMatch[1], bracketMatch[2], bracketMatch[3] || '');
+      continue;
+    }
+
+    const parenMatch = line.match(/^\s*([^(\\n]+?)\s*\((\d{3,})\)\b(.*)$/i);
+    if (parenMatch) {
+      pushFound(parenMatch[1], parenMatch[2], parenMatch[3] || '');
+      continue;
+    }
+
+    const sameLineUrl = line.match(/^(.*?)(?:https?:\/\/\S*profiles\.php\?XID=(\d{3,})\S*)/i);
+    if (sameLineUrl) {
+      pushFound(sameLineUrl[1], sameLineUrl[2]);
+      continue;
+    }
+
+    const next = lines[i + 1] || '';
+    const nextIdMatch = next.match(/profiles\.php\?XID=(\d{3,})/i);
+    if (nextIdMatch && isLikelyTargetName(line)) {
+      pushFound(line, nextIdMatch[1]);
+      i += 1;
+      continue;
+    }
   }
+
+  if (found.length) return found;
 
   return text
     .split('\n')
