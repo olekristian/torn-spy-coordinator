@@ -1391,7 +1391,7 @@ function renderReviewCard(t){
       <span class="pill">Submitted by: ${escapeHtml(t.claimedBy || review.submittedBy || '-')}</span>
       <span class="pill">Submitted: ${escapeHtml(formatAge(getSubmittedAt(t)))}</span>
     </div>
-    ${review.warnings && review.warnings.length ? '<div class="warning-box">' + review.warnings.map(escapeHtml).join('<br>') + '</div>' : ''}
+    ${review.warnings && review.warnings.length ? '<div style="background-color: rgba(255, 193, 7, 0.1); border-left: 3px solid var(--warn); padding: 8px; margin: 8px 0; border-radius: 4px;"><div style="font-weight: 600; color: var(--warn); margin-bottom: 4px;">Reason for Manual Review:</div>' + review.warnings.map(w => '<div>• ' + escapeHtml(w) + '</div>').join('') + '</div>' : ''}
     <div class="preview-grid">
       <label>Name<input id="review-name-${t.id}" value="${escapeHtml(payload.name || t.targetName || '')}"></label>
       <label>ID<input id="review-id-${t.id}" value="${escapeHtml(payload.targetId || t.targetId || '')}"></label>
@@ -2640,7 +2640,7 @@ function formatSubmittedTasks(tasks, format){
 }
 
 async function copyTarget(target){
-  const text = formatTargetReference(target) + (target.notes ? ' - ' + target.notes : '');
+  const text = formatTargetReference(target);
   await navigator.clipboard.writeText(text);
   setStatus('Target copied.');
   const feedback = qs('#employee-copy-feedback');
