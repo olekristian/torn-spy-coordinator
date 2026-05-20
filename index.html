@@ -506,6 +506,7 @@ const state={
   adminVerified:false,
   busyTaskIds: new Set(),
   busyTaskActions: {},
+  pastes: {},
   filters: { search:"", status:"open", priority:"all", recent:"today", review:"approved", copyFormat:"compact", audit:"all", history:"" },
   lastUpdated: "",
   importPreview: [],
@@ -972,6 +973,24 @@ function getMissingStats(p){
   return missing;
 }
 
+function savePastes(){
+  state.pastes = {};
+  const tas = document.querySelectorAll('textarea[id^="paste-"]');
+  tas.forEach(ta => {
+    const id = ta.id.substring(6); // Remove 'paste-' prefix
+    if (ta.value && ta.value.trim()) {
+      state.pastes[id] = ta.value;
+    }
+  });
+}
+
+function restorePastes(){
+  Object.keys(state.pastes).forEach(id => {
+    const ta = document.getElementById('paste-'+id);
+    if (ta) ta.value = state.pastes[id] || '';
+  });
+}
+
 function restoreTaskPaste(id, raw){
   const ta = document.getElementById('paste-'+id);
   if (ta) ta.value = raw || '';
@@ -1168,6 +1187,7 @@ function renderEmployeeTargets(parent){
       card.appendChild(row);
       addButton(row, 'Copy target', () => copyTarget(target), false, 'primary-action');
       addButton(row, 'Job special', () => openJobSpecial(target), false, 'quiet');
+      addButton(row, isTaskActionBusy(target.id, 'release') ? 'Releasing...' : 'Release', () => unclaim(target.id), isTaskActionBusy(target.id, 'release'), 'quiet');
       renderSubmitPanel(card, target);
       section.appendChild(card);
     });
@@ -1502,6 +1522,7 @@ function renderCompletedOrders(){
 async function refresh(){
   setStatus('');
   try{
+    savePastes();
     const data=await call('?action=list','GET');
     state.tasks=data.tasks||[];
     state.orders=data.orders||[];
@@ -1524,6 +1545,7 @@ async function refresh(){
     }
     state.lastUpdated = new Date().toISOString();
     render();
+    restorePastes();
   }catch(e){
     state.adminVerified = false;
     setStatus('Refresh failed: '+String(e.message||e));
