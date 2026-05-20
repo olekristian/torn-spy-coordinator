@@ -547,7 +547,19 @@ function sendNewOrderNotification_(input) {
   return { ok:true, notified:true, status:'sent' };
 }
 
+function ensureExternalRequestAuthorized_() {
+  const auth = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL, [
+    'https://www.googleapis.com/auth/script.external_request'
+  ]);
+  if (auth.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.NOT_REQUIRED) return;
+  let message = 'Discord webhook sending requires Apps Script external request authorization. Open the Apps Script editor, run any function once, accept the new permissions, then redeploy the web app.';
+  const authorizationUrl = auth.getAuthorizationUrl();
+  if (authorizationUrl) message += ' Authorization URL: ' + authorizationUrl;
+  throw new Error(message);
+}
+
 function postDiscord_(webhookUrl, content) {
+  ensureExternalRequestAuthorized_();
   const res = UrlFetchApp.fetch(String(webhookUrl || '').trim(), {
     method: 'post',
     contentType: 'application/json',
