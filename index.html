@@ -491,6 +491,7 @@ const state={
   admin:"",
   adminVerified:false,
   busyTaskIds: new Set(),
+  busyTaskActions: {},
   filters: { search:"", status:"all", priority:"all", recent:"today", review:"approved", copyFormat:"compact", audit:"all", history:"" },
   lastUpdated: "",
   importPreview: [],
@@ -503,14 +504,23 @@ const state={
   employeePayouts: []
 };
 
-function setTaskBusy(id, busy){
+function setTaskBusy(id, busy, action){
   const key = String(id);
-  if (busy) state.busyTaskIds.add(key);
-  else state.busyTaskIds.delete(key);
+  if (busy) {
+    state.busyTaskIds.add(key);
+    state.busyTaskActions[key] = action || 'busy';
+  } else {
+    state.busyTaskIds.delete(key);
+    delete state.busyTaskActions[key];
+  }
 }
 
 function isTaskBusy(id){
   return state.busyTaskIds.has(String(id));
+}
+
+function isTaskActionBusy(id, action){
+  return state.busyTaskActions[String(id)] === action;
 }
 
 function completeStats(p){
@@ -1172,7 +1182,7 @@ function renderEmployeeTargets(parent){
     actions.className = 'employee-target-actions';
     row.appendChild(actions);
     addButton(actions, 'Copy', () => copyTarget(target), false, 'quiet');
-    addButton(actions, 'Claim', () => claim(target.id), isTaskBusy(target.id) || !(status === 'open' || status === 'assigned'), 'primary-action');
+    addButton(actions, isTaskActionBusy(target.id, 'claim') ? 'Claiming...' : 'Claim', () => claim(target.id), isTaskActionBusy(target.id, 'claim') || !(status === 'open' || status === 'assigned'), 'primary-action');
     list.appendChild(row);
   });
   listSection.appendChild(list);
@@ -1224,7 +1234,7 @@ function renderTargetCard(t){
   row.className = 'row';
   row.style.marginTop = '10px';
   bd.appendChild(row);
-  if (status === 'open' || (status === 'assigned' && normalizeEmployeeName(assignment.assignedTo) === normalizeEmployeeName(state.me))) addButton(row, isTaskBusy(t.id) ? 'Claiming...' : 'Claim', () => claim(t.id), isTaskBusy(t.id));
+  if (status === 'open' || (status === 'assigned' && normalizeEmployeeName(assignment.assignedTo) === normalizeEmployeeName(state.me))) addButton(row, isTaskActionBusy(t.id, 'claim') ? 'Claiming...' : 'Claim', () => claim(t.id), isTaskActionBusy(t.id, 'claim'));
   addButton(row, 'Copy', () => copyTarget(t));
   addButton(row, 'Job special', () => openJobSpecial(t));
   if (state.adminVerified) {
@@ -1236,7 +1246,7 @@ function renderTargetCard(t){
     addButton(row, 'Assign', () => assignTarget(t.id, assignInput.value));
   }
   if (t.status === 'claimed' && (normalizeEmployeeName(t.claimedBy) === normalizeEmployeeName(state.me) || status === 'stale')) {
-    addButton(row, status === 'stale' ? 'Release stale' : 'Release', () => unclaim(t.id), isTaskBusy(t.id));
+    addButton(row, isTaskActionBusy(t.id, 'release') ? 'Releasing...' : (status === 'stale' ? 'Release stale' : 'Release'), () => unclaim(t.id), isTaskActionBusy(t.id, 'release'));
   }
   if (t.status === 'claimed' && normalizeEmployeeName(t.claimedBy) === normalizeEmployeeName(state.me)) renderSubmitPanel(bd, t);
   return card;
@@ -1269,7 +1279,7 @@ function renderSubmitPanel(parent, t){
   row.className = 'row';
   row.style.marginTop = '8px';
   parent.appendChild(row);
-  addButton(row, isTaskBusy(t.id) ? 'Submitting...' : 'Submit Result', () => submitSpy(t.id), isTaskBusy(t.id));
+  addButton(row, isTaskActionBusy(t.id, 'submit') ? 'Submitting...' : 'Submit Result', () => submitSpy(t.id), isTaskActionBusy(t.id, 'submit'));
 }
 
 function renderRecentlySubmitted(){
@@ -1500,7 +1510,7 @@ async function claim(id){
     task.status = 'claimed';
     task.claimedBy = state.me.trim();
     task.claimedAt = new Date().toISOString();
-    setTaskBusy(id, true);
+    setTaskBusy(id, true, 'claim');
     render();
   }
   setStatus('Claiming target...');
@@ -1524,7 +1534,7 @@ async function unclaim(id){
     task.status = 'open';
     task.claimedBy = '';
     task.claimedAt = '';
-    setTaskBusy(id, true);
+    setTaskBusy(id, true, 'release');
     render();
   }
   setStatus('Removing claim...');
@@ -1546,7 +1556,7 @@ async function submitSpy(id){
   try{
     const ta = document.getElementById('paste-'+id);
     raw = ta ? (ta.value || '') : '';
-    setTaskBusy(id, true);
+    setTaskBusy(id, true, 'submit');
     render();
     restoreTaskPaste(id, raw);
     updateSpyPreview(id);

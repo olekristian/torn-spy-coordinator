@@ -11,7 +11,9 @@ Setup:
 1. Create/open the Google Sheet you want to use.
 2. Extensions -> Apps Script.
 3. Paste `apps-script/Code.gs`.
-4. Set Script Properties: `API_KEY`, `ADMIN_KEY`, and optionally `DISCORD_WEBHOOK_URL` for manager phone/channel notifications.
+4. Set Script Properties: `API_KEY`, `ADMIN_KEY`, and optionally `MANAGER_DISCORD_WEBHOOK_URL` and `EMPLOYEE_DISCORD_WEBHOOK_URL`.
+
+`MANAGER_DISCORD_WEBHOOK_URL` is used for completed order notifications. `EMPLOYEE_DISCORD_WEBHOOK_URL` is used for new order notifications. `DISCORD_WEBHOOK_URL` still works as a fallback if you only want one webhook.
 5. Deploy as Web App.
 6. Use the Web App URL as `DEFAULT_API` in `index.html` or keep the existing URL if that deployment is updated.
 

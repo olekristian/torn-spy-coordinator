@@ -1,7 +1,8 @@
 function _props(){ return PropertiesService.getScriptProperties(); }
 function _apiKey(){ return _props().getProperty('API_KEY') || ''; }
 function _adminKey(){ return _props().getProperty('ADMIN_KEY') || ''; }
-function _discordWebhookUrl(){ return _props().getProperty('DISCORD_WEBHOOK_URL') || ''; }
+function _managerDiscordWebhookUrl(){ return _props().getProperty('MANAGER_DISCORD_WEBHOOK_URL') || _props().getProperty('DISCORD_WEBHOOK_URL') || ''; }
+function _employeeDiscordWebhookUrl(){ return _props().getProperty('EMPLOYEE_DISCORD_WEBHOOK_URL') || _props().getProperty('DISCORD_WEBHOOK_URL') || ''; }
 
 const SHEETS = {
   targets: 'Targets',
@@ -463,7 +464,7 @@ function sendOrderCompleteNotification_(input) {
   };
 
   if (!statusOnly) {
-    const webhookUrl = _discordWebhookUrl();
+    const webhookUrl = _managerDiscordWebhookUrl();
     if (!webhookUrl) {
       updates.completionNotificationStatus = 'webhook_missing';
       writeObjectAtRow_(sheet_(SHEETS.orders), row._row, updates);
@@ -508,7 +509,7 @@ function sendNewOrderNotification_(input) {
     newOrderNotificationStatus: 'sent',
     updatedAt: now_(),
   };
-  const webhookUrl = _discordWebhookUrl();
+  const webhookUrl = _employeeDiscordWebhookUrl();
   if (!webhookUrl) {
     updates.newOrderNotificationStatus = 'webhook_missing';
     writeObjectAtRow_(sheet_(SHEETS.orders), row._row, updates);
