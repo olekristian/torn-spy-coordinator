@@ -333,6 +333,13 @@ th { color:var(--muted); font-size:12px; }
         <div class="muted">New tasks appear on the board after refresh.</div>
       </div></div>
       <div class="card" style="margin-top:12px"><div class="hd">Mass Import</div><div class="bd grid">
+        <div class="row">
+          <input id="bulk-order" placeholder="Order ID for all imported targets" style="width:180px">
+          <input id="bulk-customer" placeholder="Bought by / customer" style="width:220px">
+          <input id="bulk-note" placeholder="Note added to all imported targets" style="flex:1">
+          <input id="bulk-price" type="number" min="0" step="1" placeholder="Customer price each" style="width:160px">
+          <input id="bulk-rate" type="number" min="0" step="1" placeholder="Employee rate each" style="width:160px">
+        </div>
         <textarea id="m-bulk" placeholder="One target per line. Use name | id | notes | priority, name, id, notes, priority, tab-separated values, Name [ID], or profile URLs."></textarea>
         <div class="row">
           <button id="m-preview-import">Preview Import</button>
@@ -1688,8 +1695,15 @@ function validateTargetImport(raw){
   try{ parsed = extractImportTargets(raw); }catch(e){ return [{ status:'Invalid', targetId:'', targetName:'', notes:String(e.message || e), priority:'normal' }]; }
   const existing = new Map(state.tasks.filter(t => t.targetId).map(t => [String(t.targetId), t]));
   const seen = new Set();
+  const defaults = getBulkDefaults();
   return parsed.map(item => {
     item.priority = normalizePriority(item.priority || item.notesPriority);
+    const ownNote = item.notes || '';
+    item.notes = [defaults.note, ownNote].filter(Boolean).join(ownNote && defaults.note ? ' | ' : '');
+    item.orderId = item.orderId || defaults.orderId;
+    item.customer = item.customer || defaults.customer;
+    item.pricePerSpy = item.pricePerSpy || defaults.pricePerSpy;
+    item.employeeRate = item.employeeRate || defaults.employeeRate;
     const id = String(item.targetId || '').trim();
     const key = id || item.targetName.toLowerCase();
     let status = 'New';
@@ -1715,6 +1729,16 @@ function validateTargetImport(raw){
   });
 }
 
+function getBulkDefaults(){
+  return {
+    orderId: (qs('#bulk-order')?.value || '').trim(),
+    customer: (qs('#bulk-customer')?.value || '').trim(),
+    note: (qs('#bulk-note')?.value || '').trim(),
+    pricePerSpy: (qs('#bulk-price')?.value || '').trim(),
+    employeeRate: (qs('#bulk-rate')?.value || '').trim()
+  };
+}
+
 function renderImportPreview(){
   const el = qs('#m-import-preview');
   if (!el) return;
@@ -1724,8 +1748,8 @@ function renderImportPreview(){
     return;
   }
   el.hidden = false;
-  el.innerHTML = `<table><thead><tr><th>Status</th><th>Target ID</th><th>Target name</th><th>Note</th><th>Priority</th></tr></thead><tbody>${
-    state.importPreview.map(item => `<tr><td><span class="pill ${item.status === 'New' ? 'status-submitted' : item.status === 'Duplicate' ? 'status-warning' : 'status-stale'}">${escapeHtml(item.status)}</span></td><td>${escapeHtml(item.targetId || '')}</td><td>${escapeHtml(item.targetName || '')}</td><td>${escapeHtml(item.notes || '')}</td><td>${escapeHtml(normalizePriority(item.priority).toUpperCase())}</td></tr>`).join('')
+  el.innerHTML = `<table><thead><tr><th>Status</th><th>Target ID</th><th>Target name</th><th>Customer</th><th>Order</th><th>Note</th><th>Priority</th></tr></thead><tbody>${
+    state.importPreview.map(item => `<tr><td><span class="pill ${item.status === 'New' ? 'status-submitted' : item.status === 'Duplicate' ? 'status-warning' : 'status-stale'}">${escapeHtml(item.status)}</span></td><td>${escapeHtml(item.targetId || '')}</td><td>${escapeHtml(item.targetName || '')}</td><td>${escapeHtml(item.customer || '')}</td><td>${escapeHtml(item.orderId || '')}</td><td>${escapeHtml(item.notes || '')}</td><td>${escapeHtml(normalizePriority(item.priority).toUpperCase())}</td></tr>`).join('')
   }</tbody></table>`;
 }
 
@@ -1779,8 +1803,7 @@ function readCorrectedSpy(id, fallback){
     defense: parseNumberToken(get('defense')?.value),
     speed: parseNumberToken(get('speed')?.value),
     dexterity: parseNumberToken(get('dexterity')?.value),
-    total: parseNumberToken(get('total')?.value),
-    level: fallback.level ?? null
+    total: parseNumberToken(get('total')?.value)
   };
 }
 
@@ -1870,7 +1893,7 @@ async function importTargets(){
   const failed = [];
   for (const item of unique) {
     try{
-      await call('', 'POST', { action:'add', targetName:item.targetName, targetId:item.targetId, notes:item.notes, priority:item.priority });
+      await call('', 'POST', { action:'add', targetName:item.targetName, targetId:item.targetId, notes:item.notes, priority:item.priority, orderId:item.orderId, customer:item.customer, pricePerSpy:item.pricePerSpy, employeeRate:item.employeeRate });
       addAuditLog('target_added', item.targetId, item.targetName);
       added += 1;
       await delay(120);
