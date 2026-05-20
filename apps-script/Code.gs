@@ -577,11 +577,32 @@ function updateOrderPayment_(orderId, status) {
 }
 
 function updateTarget_(id, updater) {
-  const rows = readObjectsWithRows_(SHEETS.targets);
-  const found = rows.find(r => String(r.id) === String(id));
-  if (!found) throw new Error('Target not found.');
-  const next = updater(Object.assign({}, found));
-  writeObjectAtRow_(sheet_(SHEETS.targets), found._row, next);
+  // Only read the header and the id column to find the row number, then update just that row.
+  const sheet = sheet_(SHEETS.targets);
+  const idCol = HEADERS.Targets.indexOf('id') + 1;
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) throw new Error('No targets in sheet.');
+  const idValues = sheet.getRange(2, idCol, lastRow - 1, 1).getValues();
+  let foundRow = null;
+  for (let i = 0; i < idValues.length; ++i) {
+    if (String(idValues[i][0]) === String(id)) {
+      foundRow = i + 2;
+      break;
+    }
+  }
+  if (!foundRow) throw new Error('Target not found.');
+  // Read the full row
+  const headers = HEADERS.Targets;
+  const rowValues = sheet.getRange(foundRow, 1, 1, headers.length).getValues()[0];
+  const rowObj = { _row: foundRow };
+  headers.forEach((h, idx) => rowObj[h] = rowValues[idx]);
+  const next = updater(Object.assign({}, rowObj));
+  // Write only the updated row
+  headers.forEach((h, idx) => {
+    if (Object.prototype.hasOwnProperty.call(next, h))
+      sheet.getRange(foundRow, idx + 1).setValue(next[h] == null ? '' : next[h]);
+  });
+  SpreadsheetApp.flush();
 }
 
 function getTargetById_(id) {
