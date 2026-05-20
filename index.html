@@ -252,6 +252,53 @@ th { color:var(--muted); font-size:12px; }
             <div id="audit-log" class="table-wrap"></div>
           </div>
         </div>
+
+        <div class="card" style="margin-top:12px" id="history-card">
+          <div class="hd">Delivery History</div>
+          <div class="bd">
+            <div class="filters">
+              <input id="history-search" placeholder="Search customer, order, target, spy, delivered by">
+              <input id="history-customer" placeholder="Customer / requester">
+              <input id="history-order" placeholder="Order / case">
+              <button id="archive-visible">Archive visible approved</button>
+              <button id="copy-history">Copy history</button>
+              <button id="export-history">Export JSON</button>
+            </div>
+            <div class="muted" style="margin-bottom:10px">Use this as your local history of who ordered what, when, what was delivered, and by whom.</div>
+            <div id="history-list" class="table-wrap"></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:12px" id="ledger-card">
+          <div class="hd">Payments & Payout Ledger</div>
+          <div class="bd">
+            <div class="filters">
+              <input id="ledger-order" placeholder="Order ID">
+              <input id="ledger-customer" placeholder="Customer">
+              <input id="ledger-customer-amount" type="number" min="0" step="1" placeholder="Customer paid amount">
+              <select id="ledger-customer-status">
+                <option value="unpaid">Customer unpaid</option>
+                <option value="partial">Customer partial</option>
+                <option value="paid">Customer paid</option>
+              </select>
+              <input id="ledger-payment-ref" placeholder="Payment reference / note">
+              <button id="record-customer-payment">Record customer payment</button>
+            </div>
+            <div class="filters">
+              <input id="ledger-employee" placeholder="Employee display name">
+              <input id="ledger-target-id" placeholder="Target ID">
+              <input id="ledger-employee-amount" type="number" min="0" step="1" placeholder="Employee payout amount">
+              <select id="ledger-employee-status">
+                <option value="unpaid">Employee unpaid</option>
+                <option value="queued">Employee queued</option>
+                <option value="paid">Employee paid</option>
+              </select>
+              <input id="ledger-payout-ref" placeholder="Payout reference / note">
+              <button id="record-employee-payout">Record employee payout</button>
+            </div>
+            <div id="ledger-summary" class="table-wrap"></div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -271,6 +318,10 @@ th { color:var(--muted); font-size:12px; }
           <input id="m-name" placeholder="Target name (e.g., tc103)" style="flex:1">
           <input id="m-id" placeholder="Target ID (optional)" style="width:180px">
           <input id="m-notes" placeholder="Notes (faction, deadline)" style="flex:1">
+          <input id="m-order" placeholder="Order ID" style="width:150px">
+          <input id="m-customer" placeholder="Customer" style="width:160px">
+          <input id="m-price" type="number" min="0" step="1" placeholder="Customer price" style="width:150px">
+          <input id="m-rate" type="number" min="0" step="1" placeholder="Employee rate" style="width:150px">
           <select id="m-priority">
             <option value="normal">Normal</option>
             <option value="rush">Rush</option>
@@ -303,6 +354,7 @@ const STALE_DANGER_MINUTES = 60;
 const AUDIT_KEY = "torn_spy_audit_log";
 const REVIEW_KEY = "torn_spy_review_overrides";
 const ASSIGNMENT_KEY = "torn_spy_assignments";
+const HISTORY_KEY = "torn_spy_delivery_history";
 // ===== Helpers =====
 function qs(sel){ return document.querySelector(sel); }
 function setStatus(msg){ const e=qs('#err'); if(e) e.textContent = msg || ''; }
@@ -316,12 +368,16 @@ const state={
   key: DEFAULT_KEY, 
   admin:"",
   busyTaskIds: new Set(),
-  filters: { search:"", status:"all", priority:"all", recent:"today", review:"approved", copyFormat:"compact", audit:"all" },
+  filters: { search:"", status:"all", priority:"all", recent:"today", review:"approved", copyFormat:"compact", audit:"all", history:"" },
   lastUpdated: "",
   importPreview: [],
   auditLog: [],
   reviews: {},
-  assignments: {}
+  assignments: {},
+  history: [],
+  orders: [],
+  customerPayments: [],
+  employeePayouts: []
 };
 
 function setTaskBusy(id, busy){
@@ -459,6 +515,7 @@ function loadSettings(){
   try{ state.auditLog = JSON.parse(localStorage.getItem(AUDIT_KEY) || '[]'); }catch(_){ state.auditLog = []; }
   try{ state.reviews = JSON.parse(localStorage.getItem(REVIEW_KEY) || '{}'); }catch(_){ state.reviews = {}; }
   try{ state.assignments = JSON.parse(localStorage.getItem(ASSIGNMENT_KEY) || '{}'); }catch(_){ state.assignments = {}; }
+  try{ state.history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); }catch(_){ state.history = []; }
   if (qs('#api-key')) qs('#api-key').value = state.key;
   if (qs('#adm')) qs('#adm').value = state.admin;
   const meI=qs('#me');
@@ -499,14 +556,18 @@ async function call(path, method='GET', body){
   try{
     const res = await fetch(url, opts);
     if(!res.ok) throw new Error(await res.text());
-    return await res.json();
+    const data = await res.json();
+    if (data && data.ok === false) throw new Error(data.error || 'Request failed.');
+    return data;
   }catch(e){
     // GET fallback with payload
     if(method !== 'GET'){
       const payload = encodeURIComponent(JSON.stringify(attach(body)));
       const res2 = await fetch(url + (url.includes('?')?'&':'?') + 'payload=' + payload, { method:'GET' });
       if(!res2.ok) throw new Error(await res2.text());
-      return await res2.json();
+      const data2 = await res2.json();
+      if (data2 && data2.ok === false) throw new Error(data2.error || 'Request failed.');
+      return data2;
     }
     throw e;
   }
@@ -769,6 +830,8 @@ function enforceVisibility(){
   const rc = document.getElementById('recent-card'); if(rc) rc.style.display = isAdminUI ? '' : 'none';
   const reviewCard = document.getElementById('review-card'); if(reviewCard) reviewCard.style.display = isAdminUI ? '' : 'none';
   const auditCard = document.getElementById('audit-card'); if(auditCard) auditCard.style.display = isAdminUI ? '' : 'none';
+  const historyCard = document.getElementById('history-card'); if(historyCard) historyCard.style.display = isAdminUI ? '' : 'none';
+  const ledgerCard = document.getElementById('ledger-card'); if(ledgerCard) ledgerCard.style.display = isAdminUI ? '' : 'none';
   const manageBtn = document.getElementById('tab-manage-btn'); if(manageBtn) manageBtn.style.display = isAdminUI ? '' : 'none';
   const tabManage = document.getElementById('tab-manage'); if(tabManage) tabManage.hidden = !isAdminUI;
 
@@ -787,6 +850,8 @@ function render(){
   renderRecentlySubmitted();
   renderReviewQueue();
   renderAuditLog();
+  renderHistory();
+  renderLedger();
   renderImportPreview();
 }
 
@@ -800,6 +865,8 @@ function renderDashboard(){
     ['Claimed targets', state.tasks.filter(t => t.status === 'claimed').length],
     ['Submitted today', submittedToday],
     ['Stale claims', state.tasks.filter(isClaimStale).length],
+    ['Customer unpaid', state.tasks.filter(t => (t.customerPaymentStatus || 'unpaid') !== 'paid').length],
+    ['Employee unpaid', state.tasks.filter(t => t.status === 'submitted' && (t.employeePayoutStatus || 'unpaid') !== 'paid').length],
     ['Last updated', state.lastUpdated ? new Date(state.lastUpdated).toLocaleTimeString() : '-']
   ];
   el.innerHTML = values.map(([label,value]) => `<div class="dash-card"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div></div>`).join('');
@@ -848,6 +915,10 @@ function renderTargetCard(t){
       ${assignment ? '<span class="pill status-assigned">Assigned to: ' + escapeHtml(assignment.assignedTo) + '</span>' : ''}
       ${t.claimedBy ? '<span class="pill">Claimed by: ' + escapeHtml(t.claimedBy) + '</span>' : ''}
       ${t.claimedBy ? '<span class="pill">Age: ' + escapeHtml(formatAge(claimedAt)) + '</span>' : ''}
+      ${t.customer ? '<span class="pill">Customer: ' + escapeHtml(t.customer) + '</span>' : ''}
+      ${t.orderId ? '<span class="pill">Order: ' + escapeHtml(t.orderId) + '</span>' : ''}
+      <span class="pill">Customer pay: ${escapeHtml(t.customerPaymentStatus || 'unpaid')}</span>
+      <span class="pill">Employee pay: ${escapeHtml(t.employeePayoutStatus || 'unpaid')}</span>
     </div>
     ${t.notes ? '<div class="muted">' + escapeHtml(t.notes) + '</div>' : ''}
   `;
@@ -929,6 +1000,13 @@ function renderRecentlySubmitted(){
     pre.style.marginTop = '8px';
     pre.textContent = t.formatted || (t.payload && t.payload.formatted) || '';
     bd.appendChild(pre);
+    if (state.admin) {
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.style.marginTop = '8px';
+      bd.appendChild(row);
+      addButton(row, 'Archive to history', () => archiveSubmissionToHistory(t));
+    }
     recentEl.appendChild(card);
   });
 }
@@ -996,8 +1074,37 @@ function renderAuditLog(){
   el.innerHTML = `<table><thead><tr><th>Timestamp</th><th>Actor</th><th>Action</th><th>Target ID</th><th>Details</th></tr></thead><tbody>${rows.map(entry => `<tr><td>${escapeHtml(new Date(entry.timestamp).toLocaleString())}</td><td>${escapeHtml(entry.actor)}</td><td>${escapeHtml(entry.action)}</td><td>${escapeHtml(entry.targetId)}</td><td>${escapeHtml(entry.details)}</td></tr>`).join('')}</tbody></table>`;
 }
 
+function renderHistory(){
+  const el = qs('#history-list');
+  if (!el) return;
+  const rows = getFilteredHistory();
+  if (!rows.length) {
+    el.innerHTML = '<div class="muted">No archived deliveries yet.</div>';
+    return;
+  }
+  el.innerHTML = `<table><thead><tr><th>Archived</th><th>Customer</th><th>Order</th><th>Target</th><th>Delivered by</th><th>Submitted</th><th>Result</th></tr></thead><tbody>${rows.map(entry => `<tr><td>${escapeHtml(new Date(entry.archivedAt).toLocaleString())}</td><td>${escapeHtml(entry.customer || '')}</td><td>${escapeHtml(entry.order || '')}</td><td>${escapeHtml(entry.targetName || '')} ${entry.targetId ? '[' + escapeHtml(entry.targetId) + ']' : ''}</td><td>${escapeHtml(entry.deliveredBy || '')}</td><td>${escapeHtml(entry.submittedAt ? new Date(entry.submittedAt).toLocaleString() : '')}</td><td><div class="mono">${escapeHtml(entry.formatted || '')}</div></td></tr>`).join('')}</tbody></table>`;
+}
+
+function renderLedger(){
+  const el = qs('#ledger-summary');
+  if (!el) return;
+  const submitted = state.tasks.filter(t => t.status === 'submitted');
+  const customerDue = state.tasks.reduce((sum,t)=>sum + ((t.customerPaymentStatus || 'unpaid') === 'paid' ? 0 : Number(t.pricePerSpy || 0)), 0);
+  const employeeDue = submitted.reduce((sum,t)=>sum + ((t.employeePayoutStatus || 'unpaid') === 'paid' ? 0 : Number(t.employeeRate || 0)), 0);
+  const collected = state.customerPayments.reduce((sum,p)=>sum + Number(p.amount || 0), 0);
+  const paidOut = state.employeePayouts.reduce((sum,p)=>sum + Number(p.amount || 0), 0);
+  const rows = [
+    ['Customer unpaid value', customerDue],
+    ['Employee unpaid value', employeeDue],
+    ['Customer payments recorded', collected],
+    ['Employee payouts recorded', paidOut],
+    ['Estimated net after recorded payouts', collected - paidOut]
+  ];
+  el.innerHTML = `<table><thead><tr><th>Metric</th><th>Amount</th></tr></thead><tbody>${rows.map(([k,v])=>`<tr><td>${escapeHtml(k)}</td><td>${Number(v || 0).toLocaleString()}</td></tr>`).join('')}</tbody></table>`;
+}
+
 // ===== Actions =====
-async function refresh(){ setStatus(''); try{ const data=await call('?action=list','GET'); state.tasks=data.tasks||[]; state.lastUpdated = new Date().toISOString(); render(); }catch(e){ setStatus('Refresh failed: '+String(e.message||e)); }enforceVisibility(); }
+async function refresh(){ setStatus(''); try{ const data=await call('?action=list','GET'); state.tasks=data.tasks||[]; state.orders=data.orders||[]; state.customerPayments=data.customerPayments||[]; state.employeePayouts=data.employeePayouts||[]; if(data.deliveryHistory&&data.deliveryHistory.length) state.history=data.deliveryHistory.concat(state.history).slice(0,500); state.lastUpdated = new Date().toISOString(); render(); }catch(e){ setStatus('Refresh failed: '+String(e.message||e)); }enforceVisibility(); }
 async function claim(id){
   if(!state.me){ alert('Set your display name first.'); return; }
   const task = state.tasks.find(t => String(t.id)===String(id));
@@ -1351,6 +1458,7 @@ function saveReviewEdit(id){
   review.editedPayload = readReviewPayload(id);
   review.warnings = buildSubmissionWarnings(task, review.editedPayload);
   saveReviews();
+  syncLedgerAction('review', { id, targetRowId:id, status:review.status, payload:review.editedPayload });
   addAuditLog('manager_edit_submission', review.editedPayload.targetId || task.targetId, review.editedPayload.name || task.targetName);
   setStatus('Review edit saved locally.');
   render();
@@ -1365,6 +1473,7 @@ function approveSubmission(id){
   review.reviewedAt = new Date().toISOString();
   review.reviewedBy = state.me || 'manager';
   saveReviews();
+  syncLedgerAction('review', { id, targetRowId:id, status:'approved', payload:getReviewPayload(task) });
   addAuditLog('manager_approved_submission', task.targetId, task.targetName);
   setStatus('Submission approved.');
   render();
@@ -1380,6 +1489,7 @@ function rejectSubmission(id){
   review.reviewedBy = state.me || 'manager';
   review.rejectReason = reason;
   saveReviews();
+  syncLedgerAction('review', { id, targetRowId:id, status:'rejected', details:reason });
   addAuditLog('manager_rejected_submission', task.targetId, reason || task.targetName);
   setStatus('Submission rejected.');
   render();
@@ -1402,6 +1512,7 @@ function assignTarget(id, displayName){
   if (!task || !name) return;
   state.assignments[taskKey(task)] = { assignedTo: name, assignedAt: new Date().toISOString(), assignedBy: state.me || 'manager' };
   saveAssignments();
+  syncLedgerAction('assign', { id, assignedTo:name });
   addAuditLog('manager_assigned_target', task.targetId, name);
   setStatus('Target assigned.');
   render();
@@ -1427,6 +1538,137 @@ function getFilteredAuditLog(){
     if (filter === 'warnings') return /warning|error|failed|rejected/.test(entry.action);
     return true;
   });
+}
+
+function saveHistory(){
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(state.history));
+}
+
+function historyKeyFromTask(target){
+  return String(target.id || '') + '|' + String(target.targetId || '') + '|' + String(getSubmittedAt(target)?.toISOString() || '');
+}
+
+function makeHistoryEntry(target, meta){
+  const payload = getReviewPayload(target);
+  return {
+    id: historyKeyFromTask(target),
+    archivedAt: new Date().toISOString(),
+    archivedBy: state.me || 'manager',
+    customer: (meta && meta.customer) || '',
+    order: (meta && meta.order) || '',
+    targetName: target.targetName || payload.name || '',
+    targetId: target.targetId || payload.targetId || '',
+    requestedBy: (meta && meta.customer) || '',
+    deliveredBy: target.claimedBy || getReview(target).submittedBy || '',
+    submittedAt: (getSubmittedAt(target) || new Date()).toISOString(),
+    reviewStatus: getReview(target).status,
+    level: payload.level ?? '',
+    formatted: formatSubmittedTasks([target], 'compact'),
+    rawText: getReview(target).rawText || payload.rawText || ''
+  };
+}
+
+function archiveSubmissionToHistory(target){
+  const customer = qs('#history-customer')?.value || window.prompt('Customer / requester:', '') || '';
+  const order = qs('#history-order')?.value || window.prompt('Order / case:', '') || '';
+  const entry = makeHistoryEntry(target, { customer, order });
+  state.history = state.history.filter(item => item.id !== entry.id);
+  state.history.unshift(entry);
+  saveHistory();
+  syncLedgerAction('history', { entry });
+  addAuditLog('manager_archived_delivery', entry.targetId, (entry.customer || 'No customer') + ' | ' + (entry.order || 'No order'));
+  setStatus('Delivery archived to history.');
+  renderHistory();
+}
+
+function archiveVisibleApproved(){
+  const customer = qs('#history-customer')?.value || '';
+  const order = qs('#history-order')?.value || '';
+  const tasks = getSubmittedByDate().filter(t => getReview(t).status === 'approved');
+  tasks.forEach(task => {
+    const entry = makeHistoryEntry(task, { customer, order });
+    state.history = state.history.filter(item => item.id !== entry.id);
+    state.history.unshift(entry);
+    syncLedgerAction('history', { entry });
+  });
+  saveHistory();
+  addAuditLog('manager_archived_bulk_delivery', '', tasks.length + ' approved delivery record(s)');
+  setStatus('Archived ' + tasks.length + ' approved delivery record(s).');
+  renderHistory();
+}
+
+function getFilteredHistory(){
+  const query = String(state.filters.history || '').trim().toLowerCase();
+  if (!query) return state.history;
+  return state.history.filter(entry => [
+    entry.customer, entry.order, entry.targetName, entry.targetId, entry.deliveredBy, entry.formatted, entry.rawText
+  ].filter(Boolean).join('\n').toLowerCase().includes(query));
+}
+
+function formatHistoryText(){
+  return getFilteredHistory().map(entry => [
+    `Customer: ${entry.customer || '-'}`,
+    `Order: ${entry.order || '-'}`,
+    `Target: ${entry.targetName || 'Unknown'}${entry.targetId ? ' [' + entry.targetId + ']' : ''}`,
+    `Delivered by: ${entry.deliveredBy || '-'}`,
+    `Submitted: ${entry.submittedAt ? new Date(entry.submittedAt).toLocaleString() : '-'}`,
+    `Archived: ${entry.archivedAt ? new Date(entry.archivedAt).toLocaleString() : '-'}`,
+    '',
+    entry.formatted || ''
+  ].join('\n')).join('\n\n---\n\n');
+}
+
+async function copyHistory(){
+  await navigator.clipboard.writeText(formatHistoryText());
+  setStatus('History copied.');
+}
+
+function exportHistory(){
+  const blob = new Blob([JSON.stringify({ exportedAt:new Date().toISOString(), history:state.history }, null, 2)], { type:'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'torn-spy-delivery-history.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function syncLedgerAction(action, payload){
+  try{
+    await call('', 'POST', Object.assign({ action, employee: state.me.trim() }, payload || {}));
+  }catch(e){
+    addAuditLog('ledger_sync_warning', payload && (payload.targetId || payload.orderId || ''), e.message || String(e));
+  }
+}
+
+async function recordCustomerPayment(){
+  const payload = {
+    orderId: qs('#ledger-order')?.value || '',
+    customer: qs('#ledger-customer')?.value || '',
+    amount: qs('#ledger-customer-amount')?.value || '',
+    status: qs('#ledger-customer-status')?.value || 'paid',
+    reference: qs('#ledger-payment-ref')?.value || ''
+  };
+  await syncLedgerAction('customerPayment', payload);
+  addAuditLog('customer_payment_recorded', payload.orderId, payload.customer + ' ' + payload.amount + ' ' + payload.status);
+  setStatus('Customer payment recorded.');
+  refresh();
+}
+
+async function recordEmployeePayout(){
+  const payload = {
+    employeeName: qs('#ledger-employee')?.value || '',
+    targetId: qs('#ledger-target-id')?.value || '',
+    amount: qs('#ledger-employee-amount')?.value || '',
+    status: qs('#ledger-employee-status')?.value || 'paid',
+    reference: qs('#ledger-payout-ref')?.value || ''
+  };
+  const target = state.tasks.find(t => String(t.targetId || '') === String(payload.targetId || ''));
+  if (target) payload.targetRowId = target.id;
+  await syncLedgerAction('employeePayout', payload);
+  addAuditLog('employee_payout_recorded', payload.targetId, payload.employeeName + ' ' + payload.amount + ' ' + payload.status);
+  setStatus('Employee payout recorded.');
+  refresh();
 }
 
 function setImportSummary(lines){
@@ -1659,13 +1901,17 @@ async function addTask(){
   const tid=(qs('#m-id').value||'').trim();
   const notes=(qs('#m-notes').value||'').trim();
   const priority=normalizePriority(qs('#m-priority')?.value);
+  const orderId=(qs('#m-order')?.value||'').trim();
+  const customer=(qs('#m-customer')?.value||'').trim();
+  const pricePerSpy=(qs('#m-price')?.value||'').trim();
+  const employeeRate=(qs('#m-rate')?.value||'').trim();
   if(!name){ alert('Please enter a target name'); return; }
   if(tid && state.tasks.some(t => String(t.targetId || '') === tid)){
     setStatus('Add blocked: target ID already exists on the board.');
     return;
   }
   try{
-    await call('', 'POST', {action:'add', targetName:name, targetId:tid, notes, priority});
+    await call('', 'POST', {action:'add', targetName:name, targetId:tid, notes, priority, orderId, customer, pricePerSpy, employeeRate});
     addAuditLog('target_added', tid, name);
     qs('#m-name').value=''; qs('#m-id').value=''; qs('#m-notes').value=''; await refresh();
   }catch(e){ setStatus('Add failed: '+String(e.message||e)); }
@@ -1768,6 +2014,12 @@ async function copyTarget(target){
   const recentFilter=qs('#recent-filter'); if(recentFilter) recentFilter.addEventListener('change',()=>{ state.filters.recent=recentFilter.value; renderRecentlySubmitted(); });
   const reviewFilter=qs('#review-filter'); if(reviewFilter) reviewFilter.addEventListener('change',()=>{ state.filters.review=reviewFilter.value; renderRecentlySubmitted(); });
   const auditFilter=qs('#audit-filter'); if(auditFilter) auditFilter.addEventListener('change',()=>{ state.filters.audit=auditFilter.value; renderAuditLog(); });
+  const historySearch=qs('#history-search'); if(historySearch) historySearch.addEventListener('input',()=>{ state.filters.history=historySearch.value; renderHistory(); });
+  const archiveVisible=qs('#archive-visible'); if(archiveVisible) archiveVisible.addEventListener('click',archiveVisibleApproved);
+  const copyHistoryBtn=qs('#copy-history'); if(copyHistoryBtn) copyHistoryBtn.addEventListener('click',copyHistory);
+  const exportHistoryBtn=qs('#export-history'); if(exportHistoryBtn) exportHistoryBtn.addEventListener('click',exportHistory);
+  const recordCustomerPaymentBtn=qs('#record-customer-payment'); if(recordCustomerPaymentBtn) recordCustomerPaymentBtn.addEventListener('click',recordCustomerPayment);
+  const recordEmployeePayoutBtn=qs('#record-employee-payout'); if(recordEmployeePayoutBtn) recordEmployeePayoutBtn.addEventListener('click',recordEmployeePayout);
   const copyFormat=qs('#copy-format'); if(copyFormat) copyFormat.addEventListener('change',()=>{ state.filters.copyFormat=copyFormat.value; });
   const releaseAllStale=qs('#release-all-stale'); if(releaseAllStale) releaseAllStale.addEventListener('click',releaseAllStaleClaims);
 
