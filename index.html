@@ -489,6 +489,7 @@ const state={
   api: DEFAULT_API, 
   key: DEFAULT_KEY, 
   admin:"",
+  adminVerified:false,
   busyTaskIds: new Set(),
   filters: { search:"", status:"all", priority:"all", recent:"today", review:"approved", copyFormat:"compact", audit:"all", history:"" },
   lastUpdated: "",
@@ -648,14 +649,13 @@ function saveSettings(){
   state.me=(qs('#me').value||'').trim();
   state.key=(qs('#api-key')?.value||'').trim();
   state.owner=(document.querySelector('#owner')?.value||'').trim();
-  state.admin = (qs('#adm')?.value || '').trim();
+  const nextAdmin = (qs('#adm')?.value || '').trim();
+  if (nextAdmin !== state.admin) state.adminVerified = false;
+  state.admin = nextAdmin;
   localStorage.setItem('torn_employee',state.me);
   localStorage.setItem('torn_api_key', state.key);
   localStorage.setItem('torn_owner',state.owner);
-  localStorage.setItem('torn_admin_key', state.admin);
-  enforceVisibility();
   localStorage.setItem('torn_owner',state.owner);
-  localStorage.setItem('torn_admin_key', state.admin);
   enforceVisibility();
 }
 
@@ -718,6 +718,28 @@ function jsonpCall(url, payload){
     document.head.appendChild(script);
     setTimeout(()=>{ if (window[callback]) { cleanup(); reject(new Error('Apps Script request timed out.')); } }, 30000);
   });
+}
+
+async function verifyAdminKey(){
+  if (!state.admin) {
+    state.adminVerified = false;
+    localStorage.removeItem('torn_admin_key');
+    enforceVisibility();
+    return false;
+  }
+  try{
+    await call('', 'POST', { action:'verifyAdmin' });
+    state.adminVerified = true;
+    localStorage.setItem('torn_admin_key', state.admin);
+    enforceVisibility();
+    return true;
+  }catch(e){
+    state.adminVerified = false;
+    localStorage.removeItem('torn_admin_key');
+    enforceVisibility();
+    setStatus('Admin key not verified. Manager tools are hidden.');
+    return false;
+  }
 }
 
 
@@ -973,7 +995,7 @@ function isAdmin(){
 }
 
 function enforceVisibility(){
-  const isAdminUI = !!state.admin; // show admin UI only if admin key present locally
+  const isAdminUI = !!state.adminVerified; // show admin UI only after backend validates the admin key
   document.body.classList.toggle('is-admin', isAdminUI);
   const completedOrdersCard = document.getElementById('completed-orders-card'); if(completedOrdersCard) completedOrdersCard.style.display = isAdminUI ? '' : 'none';
   const rc = document.getElementById('recent-card'); if(rc) rc.style.display = isAdminUI ? '' : 'none';
@@ -1008,7 +1030,7 @@ function render(){
 function renderDashboard(){
   const el = qs('#dashboard');
   if (!el) return;
-  if (!state.admin) {
+  if (!state.adminVerified) {
     const remaining = getEmployeeRelevantTargets().filter(t => t.status !== 'submitted').length;
     el.innerHTML = `<div class="dash-card"><div class="label">Targets left</div><div class="value">${remaining}</div></div>`;
     return;
@@ -1022,7 +1044,7 @@ function renderDashboard(){
     ['Stale claims', state.tasks.filter(isClaimStale).length],
     ['Last updated', state.lastUpdated ? new Date(state.lastUpdated).toLocaleTimeString() : '-']
   ];
-  if (state.admin) {
+  if (state.adminVerified) {
     values.splice(4, 0,
       ['Customer unpaid', state.tasks.filter(t => (t.customerPaymentStatus || 'unpaid') !== 'paid').length],
       ['Employee unpaid', state.tasks.filter(t => t.status === 'submitted' && (t.employeePayoutStatus || 'unpaid') !== 'paid').length]
@@ -1047,7 +1069,7 @@ function renderTargets(){
   const tasksEl = qs('#tasks');
   if (!tasksEl) return;
   tasksEl.innerHTML = '';
-  if (!state.admin) {
+  if (!state.adminVerified) {
     renderEmployeeTargets(tasksEl);
     return;
   }
@@ -1169,7 +1191,7 @@ function renderTargetCard(t){
   const priority = normalizePriority(t.priority);
   const claimedAt = getClaimedAt(t);
   const assignment = getAssignment(t);
-  const privateChips = state.admin ? `
+  const privateChips = state.adminVerified ? `
       ${t.customer ? '<span class="pill">Customer: ' + escapeHtml(t.customer) + '</span>' : ''}
       ${t.orderId ? '<span class="pill">Order: ' + escapeHtml(t.orderId) + '</span>' : ''}
       <span class="pill">Customer pay: ${escapeHtml(t.customerPaymentStatus || 'unpaid')}</span>
@@ -1205,7 +1227,7 @@ function renderTargetCard(t){
   if (status === 'open' || (status === 'assigned' && normalizeEmployeeName(assignment.assignedTo) === normalizeEmployeeName(state.me))) addButton(row, isTaskBusy(t.id) ? 'Claiming...' : 'Claim', () => claim(t.id), isTaskBusy(t.id));
   addButton(row, 'Copy', () => copyTarget(t));
   addButton(row, 'Job special', () => openJobSpecial(t));
-  if (state.admin) {
+  if (state.adminVerified) {
     const assignInput = document.createElement('input');
     assignInput.placeholder = 'Assign to display name';
     assignInput.value = assignment ? assignment.assignedTo : '';
@@ -1253,7 +1275,7 @@ function renderSubmitPanel(parent, t){
 function renderRecentlySubmitted(){
   const recentEl = qs('#recent');
   if (!recentEl) return;
-  if (!state.admin) {
+  if (!state.adminVerified) {
     recentEl.innerHTML = '';
     return;
   }
@@ -1282,7 +1304,7 @@ function renderRecentlySubmitted(){
     pre.style.marginTop = '8px';
     pre.textContent = t.formatted || (t.payload && t.payload.formatted) || '';
     bd.appendChild(pre);
-    if (state.admin) {
+    if (state.adminVerified) {
       const row = document.createElement('div');
       row.className = 'row';
       row.style.marginTop = '8px';
@@ -1296,7 +1318,7 @@ function renderRecentlySubmitted(){
 function renderReviewQueue(){
   const el = qs('#review-queue');
   if (!el) return;
-  if (!state.admin) {
+  if (!state.adminVerified) {
     el.innerHTML = '';
     return;
   }
@@ -1352,7 +1374,7 @@ function renderReviewCard(t){
 function renderAuditLog(){
   const el = qs('#audit-log');
   if (!el) return;
-  if (!state.admin) {
+  if (!state.adminVerified) {
     el.innerHTML = '';
     return;
   }
@@ -1367,7 +1389,7 @@ function renderAuditLog(){
 function renderHistory(){
   const el = qs('#history-list');
   if (!el) return;
-  if (!state.admin) {
+  if (!state.adminVerified) {
     el.innerHTML = '';
     return;
   }
@@ -1382,7 +1404,7 @@ function renderHistory(){
 function renderLedger(){
   const el = qs('#ledger-summary');
   if (!el) return;
-  if (!state.admin) {
+  if (!state.adminVerified) {
     el.innerHTML = '';
     return;
   }
@@ -1404,7 +1426,7 @@ function renderLedger(){
 function renderCompletedOrders(){
   const el = qs('#completed-orders');
   if (!el) return;
-  if (!state.admin) {
+  if (!state.adminVerified) {
     el.innerHTML = '';
     return;
   }
@@ -1453,7 +1475,24 @@ function renderCompletedOrders(){
 }
 
 // ===== Actions =====
-async function refresh(){ setStatus(''); try{ const data=await call('?action=list','GET'); state.tasks=data.tasks||[]; state.orders=data.orders||[]; state.customerPayments=data.customerPayments||[]; state.employeePayouts=data.employeePayouts||[]; if(data.deliveryHistory&&data.deliveryHistory.length) state.history=data.deliveryHistory.concat(state.history).slice(0,500); state.lastUpdated = new Date().toISOString(); render(); }catch(e){ setStatus('Refresh failed: '+String(e.message||e)); }enforceVisibility(); }
+async function refresh(){
+  setStatus('');
+  try{
+    const data=await call('?action=list','GET');
+    state.tasks=data.tasks||[];
+    state.orders=data.orders||[];
+    state.customerPayments=data.customerPayments||[];
+    state.employeePayouts=data.employeePayouts||[];
+    if(data.deliveryHistory&&data.deliveryHistory.length) state.history=data.deliveryHistory.concat(state.history).slice(0,500);
+    if (state.admin) await verifyAdminKey();
+    state.lastUpdated = new Date().toISOString();
+    render();
+  }catch(e){
+    state.adminVerified = false;
+    setStatus('Refresh failed: '+String(e.message||e));
+  }
+  enforceVisibility();
+}
 async function claim(id){
   if(!state.me){ alert('Set your display name first.'); return; }
   const task = state.tasks.find(t => String(t.id)===String(id));
@@ -2104,7 +2143,7 @@ function getBulkDefaults(){
 function renderImportPreview(){
   const el = qs('#m-import-preview');
   if (!el) return;
-  if (!state.admin) {
+  if (!state.adminVerified) {
     el.hidden = true;
     el.innerHTML = '';
     return;
@@ -2602,7 +2641,7 @@ async function openJobSpecial(target){
 
   document.querySelectorAll('.tab').forEach(b=>{
     b.addEventListener('click',()=>{
-      if (!state.admin && b.dataset.tab==='manage') {
+      if (!state.adminVerified && b.dataset.tab==='manage') {
         setStatus('Admin key required to open that tab.');
         return;
       }

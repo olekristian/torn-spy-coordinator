@@ -61,6 +61,7 @@ function dispatch_(action, input) {
   if (action === 'customerPayment') return recordCustomerPayment_(input);
   if (action === 'employeePayout') return recordEmployeePayout_(input);
   if (action === 'history') return archiveHistory_(input);
+  if (action === 'verifyAdmin') return verifyAdmin_(input);
   if (action === 'sendNewOrderNotification') return sendNewOrderNotification_(input);
   if (action === 'sendOrderCompleteNotification') return sendOrderCompleteNotification_(input);
   if (action === 'audit') return addAudit_(input.actor || input.employee || 'system', input.auditAction || 'audit', input.targetId || '', input.details || '');
@@ -339,6 +340,11 @@ function archiveHistory_(input) {
   });
   addAudit_(input.employee || 'manager', 'delivery_archived', entry.targetId || '', entry.customer || '');
   return { ok:true };
+}
+
+function verifyAdmin_(input) {
+  requireAdmin_(input);
+  return { ok:true, admin:true };
 }
 
 function latestPayloadForTarget_(targetRowId) {
@@ -642,7 +648,8 @@ function validateAccess_(input) {
 
 function requireAdmin_(input) {
   const expected = _adminKey();
-  if (expected && String(input.admin || '') !== expected) throw new Error('Admin key required.');
+  if (!expected) throw new Error('Admin key is not configured server-side.');
+  if (String(input.admin || '') !== expected) throw new Error('Admin key required.');
 }
 
 function json_(obj, input) {
