@@ -108,6 +108,7 @@ function bootstrapPayload(userId) {
   const sellers = db.prepare("SELECT * FROM seller_profiles").all();
   const orders = db.prepare(`SELECT * FROM orders WHERE ${visibility.sql} ORDER BY created_at DESC`).all(...visibility.params);
   const items = db.prepare(`SELECT oi.* FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE ${visibility.sql} ORDER BY oi.created_at DESC`).all(...visibility.params);
+  const submissions = db.prepare(`SELECT s.* FROM submissions s JOIN order_items oi ON oi.id = s.item_id JOIN orders o ON o.id = oi.order_id WHERE ${visibility.sql} ORDER BY s.created_at DESC`).all(...visibility.params);
   const payments = db.prepare(`SELECT p.* FROM payments p JOIN orders o ON o.id = p.order_id WHERE ${visibility.sql} ORDER BY p.created_at DESC`).all(...visibility.params);
   const payouts = db.prepare(`SELECT po.* FROM payouts po JOIN order_items oi ON oi.id = po.item_id JOIN orders o ON o.id = oi.order_id WHERE ${visibility.sql} ORDER BY po.created_at DESC`).all(...visibility.params);
   const notifications = db.prepare(`SELECT n.* FROM notifications n LEFT JOIN orders o ON o.id = n.order_id WHERE ${visibility.sql.replace("client_firm_id", "o.client_firm_id")} ORDER BY n.created_at DESC LIMIT 25`).all(...visibility.params);
@@ -136,7 +137,7 @@ function bootstrapPayload(userId) {
   const placeholders = Array.from(userIds).map(() => "?").join(", ");
   const users = db.prepare(`SELECT id, name, email, created_at FROM users WHERE id IN (${placeholders})`).all(...Array.from(userIds));
   const apiConsents = db.prepare("SELECT * FROM api_consents WHERE user_id = ? ORDER BY consented_at DESC").all(userId);
-  return { user, users, memberships, firms, sellerProfiles: sellers, orders, orderItems: items, payments, payouts, notifications, invitations, apiConsents };
+  return { user, users, memberships, firms, sellerProfiles: sellers, orders, orderItems: items, submissions, payments, payouts, notifications, invitations, apiConsents };
 }
 
 app.get("/api/health", (_req, res) => {
@@ -302,8 +303,8 @@ app.post("/api/orders", authRequired, requireRole(["super_admin", "coordinator",
   }
   const orderId = createId("order");
   const clientFirmId = String(req.body.clientFirmId || userMembership.firm_id);
-  db.prepare("INSERT INTO orders (id, client_firm_id, requested_by_user_id, created_by_user_id, title, due_date, agreed_price, notes, status, payment_status, completed_at, notification_sent_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', ?)").run(
-    orderId, clientFirmId, req.auth.user.id, req.auth.user.id, String(req.body.title || "").trim(), String(req.body.dueDate || ""), Number(req.body.agreedPrice || 0), String(req.body.notes || ""), "open", "unpaid", now()
+  db.prepare("INSERT INTO orders (id, order_number, client_firm_id, requested_by_user_id, created_by_user_id, title, due_date, agreed_price, notes, status, payment_status, completed_at, notification_sent_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', ?)").run(
+    orderId, String(req.body.orderNumber || "").trim(), clientFirmId, req.auth.user.id, req.auth.user.id, String(req.body.title || "").trim(), String(req.body.dueDate || ""), Number(req.body.agreedPrice || 0), String(req.body.notes || ""), "open", "unpaid", now()
   );
   const stmt = db.prepare("INSERT INTO order_items (id, order_id, target_name, target_id, notes, status, claimed_by_user_id, completed_by_user_id, submitted_by_user_id, payout_status, payout_amount, created_at, completed_at) VALUES (?, ?, ?, ?, '', 'open', '', '', '', 'unpaid', ?, ?, '')");
   for (const target of targets) {
@@ -312,10 +313,42 @@ app.post("/api/orders", authRequired, requireRole(["super_admin", "coordinator",
   res.status(201).json({ orderId });
 });
 
+app.post("/api/orders/:orderId/items", authRequired, requireRole(["super_admin", "coordinator", "lawfirm_admin", "client_requester"]), (req, res) => {
+  const order = db.prepare("SELECT * FROM orders WHERE id = ?").get(req.params.orderId);
+  if (!order) {
+    return res.status(404).json({ error: "Order not found." });
+  }
+  const visibility = visibleOrderWhere(req.auth.user.id);
+  const visible = db.prepare(`SELECT 1 FROM orders WHERE id = ? AND ${visibility.sql}`).get(req.params.orderId, ...visibility.params);
+  if (!visible) {
+    return res.status(403).json({ error: "Forbidden." });
+  }
+  const targets = parseTargetLines(req.body.targets);
+  if (!targets.length) {
+    return res.status(400).json({ error: "No valid targets detected." });
+  }
+  const stmt = db.prepare("INSERT INTO order_items (id, order_id, target_name, target_id, notes, status, claimed_by_user_id, completed_by_user_id, submitted_by_user_id, payout_status, payout_amount, created_at, completed_at) VALUES (?, ?, ?, ?, '', 'open', '', '', '', 'unpaid', ?, ?, '')");
+  for (const target of targets) {
+    stmt.run(createId("item"), order.id, target.name, target.targetId, Number(req.body.defaultPayout || 0), now());
+  }
+  db.prepare("UPDATE orders SET status = CASE WHEN status IN ('completed','delivered','closed') THEN 'open' ELSE status END, completed_at = CASE WHEN status IN ('completed','delivered','closed') THEN '' ELSE completed_at END WHERE id = ?").run(order.id);
+  res.status(201).json({ ok: true, added: targets.length });
+});
+
 app.patch("/api/orders/:orderId/status", authRequired, requireRole(["super_admin", "coordinator", "lawfirm_admin"]), (req, res) => {
   db.prepare("UPDATE orders SET status = ?, completed_at = CASE WHEN ? IN ('closed','delivered') THEN COALESCE(NULLIF(completed_at,''), ?) ELSE completed_at END WHERE id = ?").run(
     String(req.body.status || "open"), String(req.body.status || "open"), now(), req.params.orderId
   );
+  res.json({ ok: true });
+});
+
+app.patch("/api/orders/:orderId/details", authRequired, requireRole(["super_admin", "coordinator", "lawfirm_admin", "client_requester"]), (req, res) => {
+  const visibility = visibleOrderWhere(req.auth.user.id);
+  const order = db.prepare(`SELECT * FROM orders WHERE id = ? AND ${visibility.sql}`).get(req.params.orderId, ...visibility.params);
+  if (!order) {
+    return res.status(404).json({ error: "Order not found." });
+  }
+  db.prepare("UPDATE orders SET order_number = ? WHERE id = ?").run(String(req.body.orderNumber || "").trim(), order.id);
   res.json({ ok: true });
 });
 

@@ -71,6 +71,7 @@ function initializeSchema(db) {
 
     CREATE TABLE IF NOT EXISTS orders (
       id TEXT PRIMARY KEY,
+      order_number TEXT NOT NULL DEFAULT '',
       client_firm_id TEXT NOT NULL,
       requested_by_user_id TEXT NOT NULL,
       created_by_user_id TEXT NOT NULL,
@@ -176,12 +177,21 @@ function initializeSchema(db) {
       accepted_at TEXT NOT NULL DEFAULT ''
     );
   `);
+  ensureColumn(db, "orders", "order_number", "TEXT NOT NULL DEFAULT ''");
 }
 
 function insert(db, table, row) {
   const columns = Object.keys(row);
   const placeholders = columns.map((column) => `@${column}`).join(", ");
   db.prepare(`INSERT INTO ${table} (${columns.join(", ")}) VALUES (${placeholders})`).run(row);
+}
+
+function ensureColumn(db, table, column, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (columns.some((entry) => entry.name === column)) {
+    return;
+  }
+  db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
 }
 
 function seedDatabase(db) {
@@ -261,6 +271,7 @@ function seedDatabase(db) {
 
   insert(db, "orders", {
     id: orderId,
+    order_number: "ORD-0001",
     client_firm_id: clientFirmId,
     requested_by_user_id: requesterId,
     created_by_user_id: coordinatorId,
