@@ -167,12 +167,26 @@ th { color:var(--muted); font-size:12px; }
 .progress-bar { height:8px; background:var(--surface-2); border-radius:999px; overflow:hidden; }
 .progress-fill { height:100%; width:0%; background:var(--accent); transition:width .18s ease; }
 .progress-meta { display:flex; justify-content:space-between; gap:8px; margin-top:8px; color:var(--muted); font-size:12px; flex-wrap:wrap; }
-.employee-focus { max-width: 720px; margin: 0 auto; }
+.employee-focus { max-width: 820px; margin: 0 auto; }
 .employee-hero { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:4px 0 14px; }
 .employee-count { font-size:13px; color:var(--muted); }
 .next-target { padding:20px; }
 .next-target-name { font-size:26px; line-height:1.08; letter-spacing:-.04em; font-weight:680; }
 .next-target-id { margin-top:6px; color:var(--muted); font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.employee-section { display:grid; gap:10px; margin-top:12px; }
+.employee-section-title { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; }
+.employee-target-list { display:grid; gap:8px; }
+.employee-target-row {
+  display:grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap:12px;
+  align-items:center;
+  padding:12px;
+  border:1px solid var(--line);
+  border-radius:12px;
+  background:var(--surface);
+}
+.employee-target-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 .primary-action { min-height:44px; padding:10px 16px; }
 .quiet { background:var(--surface); color:var(--text); border-color:var(--line); }
 .success-note { color:var(--good); font-size:13px; margin-top:10px; min-height:18px; }
@@ -183,6 +197,8 @@ body:not(.is-admin) .manager-only { display:none !important; }
   .dashboard { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dash-card:last-child { grid-column: span 2; }
   .bar input, .bar button, .filters input, .filters select, .filters button { width:100% !important; }
+  .employee-target-row { grid-template-columns:1fr; }
+  .employee-target-actions button { flex:1 1 120px; }
   .preview-grid { grid-template-columns: 1fr; }
   .grid.cards { grid-template-columns: 1fr; }
 }
@@ -1043,40 +1059,92 @@ function getNextEmployeeTarget(){
 }
 
 function renderEmployeeTargets(parent){
-  const remaining = getEmployeeRelevantTargets().length;
-  const target = getNextEmployeeTarget();
+  const me = normalizeEmployeeName(state.me);
+  const relevant = getEmployeeRelevantTargets();
+  const claimed = relevant.filter(t => t.status === 'claimed' && normalizeEmployeeName(t.claimedBy) === me);
+  const available = relevant.filter(t => !(t.status === 'claimed' && normalizeEmployeeName(t.claimedBy) === me));
+  const remaining = relevant.length;
   const wrap = document.createElement('div');
   wrap.className = 'employee-focus';
-  if (!target) {
+  if (!remaining) {
     wrap.innerHTML = `<div class="employee-hero"><div><h2 style="margin:0">No targets ready</h2><div class="employee-count">Refresh later or ask the manager for more targets.</div></div></div>`;
     parent.appendChild(wrap);
     return;
   }
-  const status = getTargetStatus(target);
-  const card = document.createElement('div');
-  card.className = 'card next-target';
-  card.innerHTML = `
+
+  const shell = document.createElement('div');
+  shell.className = 'card next-target';
+  shell.innerHTML = `
     <div class="employee-hero">
       <div>
         <div class="employee-count">${remaining} target${remaining === 1 ? '' : 's'} left</div>
-        <div class="next-target-name">${escapeHtml(target.targetName || 'Unknown')}</div>
-        <div class="next-target-id">${target.targetId ? '[' + escapeHtml(target.targetId) + ']' : 'No ID'}</div>
+        <div class="next-target-name">Claim pool</div>
+        <div class="next-target-id">Copy, claim, submit. Manager details are hidden here.</div>
       </div>
-      <span class="pill status-${status}">${escapeHtml(status.toUpperCase())}</span>
+      <span class="pill">${available.length} available</span>
     </div>
   `;
-  const row = document.createElement('div');
-  row.className = 'row';
-  card.appendChild(row);
-  addButton(row, 'Copy target', () => copyTarget(target), false, 'primary-action');
-  addButton(row, 'Job special', () => openJobSpecial(target), false, 'quiet');
-  if (status === 'open' || status === 'assigned') addButton(row, 'Claim', () => claim(target.id), isTaskBusy(target.id), 'quiet');
-  if (target.status === 'claimed' && normalizeEmployeeName(target.claimedBy) === normalizeEmployeeName(state.me)) renderSubmitPanel(card, target);
+
+  if (claimed.length) {
+    const section = document.createElement('div');
+    section.className = 'employee-section';
+    section.innerHTML = `<div class="employee-section-title">Your claimed target${claimed.length === 1 ? '' : 's'}</div>`;
+    claimed.forEach(target => {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = `
+        <div class="employee-hero">
+          <div>
+            <div class="next-target-name">${escapeHtml(target.targetName || 'Unknown')}</div>
+            <div class="next-target-id">${target.targetId ? '[' + escapeHtml(target.targetId) + ']' : 'No ID'}</div>
+          </div>
+          <span class="pill status-claimed">CLAIMED</span>
+        </div>
+      `;
+      const row = document.createElement('div');
+      row.className = 'row';
+      card.appendChild(row);
+      addButton(row, 'Copy target', () => copyTarget(target), false, 'primary-action');
+      addButton(row, 'Job special', () => openJobSpecial(target), false, 'quiet');
+      renderSubmitPanel(card, target);
+      section.appendChild(card);
+    });
+    shell.appendChild(section);
+  }
+
+  const listSection = document.createElement('div');
+  listSection.className = 'employee-section';
+  listSection.innerHTML = `<div class="employee-section-title">Available targets</div>`;
+  const list = document.createElement('div');
+  list.className = 'employee-target-list';
+  if (!available.length) {
+    list.innerHTML = `<div class="muted">No open targets right now. Finish your claimed target or refresh later.</div>`;
+  }
+  available.forEach(target => {
+    const status = getTargetStatus(target);
+    const row = document.createElement('div');
+    row.className = 'employee-target-row';
+    row.innerHTML = `
+      <div>
+        <div style="font-weight:650">${escapeHtml(target.targetName || 'Unknown')}</div>
+        <div class="next-target-id">${target.targetId ? '[' + escapeHtml(target.targetId) + ']' : 'No ID'}</div>
+      </div>
+    `;
+    const actions = document.createElement('div');
+    actions.className = 'employee-target-actions';
+    row.appendChild(actions);
+    addButton(actions, 'Copy', () => copyTarget(target), false, 'quiet');
+    addButton(actions, 'Claim', () => claim(target.id), isTaskBusy(target.id) || !(status === 'open' || status === 'assigned'), 'primary-action');
+    list.appendChild(row);
+  });
+  listSection.appendChild(list);
+  shell.appendChild(listSection);
+
   const feedback = document.createElement('div');
   feedback.id = 'employee-copy-feedback';
   feedback.className = 'success-note';
-  card.appendChild(feedback);
-  wrap.appendChild(card);
+  shell.appendChild(feedback);
+  wrap.appendChild(shell);
   parent.appendChild(wrap);
 }
 
