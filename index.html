@@ -450,7 +450,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
   </div>
 
 <script>
-const DEFAULT_API = "https://script.google.com/macros/s/AKfycbyLtGYpCXAR51YjGvr6oTVEv_0d6RLfu8IAEsowaFotd2L_316pvdKgXUSxayfTvKQ2/exec";
+const DEFAULT_API = "https://script.google.com/macros/s/AKfycbwmvn4x0wmHDllT-IYWINU1OI-DG9Hdk_sEhZUQKmsqJA16y9yOOnAHjJ6NGIqI9WTQ/exec";
 const DEFAULT_KEY = "";
 const STALE_WARNING_MINUTES = 30;
 const STALE_DANGER_MINUTES = 60;
@@ -506,7 +506,7 @@ const state={
   adminVerified:false,
   busyTaskIds: new Set(),
   busyTaskActions: {},
-  filters: { search:"", status:"all", priority:"all", recent:"today", review:"approved", copyFormat:"compact", audit:"all", history:"" },
+  filters: { search:"", status:"open", priority:"all", recent:"today", review:"approved", copyFormat:"compact", audit:"all", history:"" },
   lastUpdated: "",
   importPreview: [],
   auditLog: [],
@@ -2605,7 +2605,7 @@ async function openJobSpecial(target){
   const previewImportBtn=qs('#m-preview-import'); if(previewImportBtn) previewImportBtn.addEventListener('click',previewImportTargets);
   const importBtn=qs('#m-import'); if(importBtn) importBtn.addEventListener('click',importTargets);
   const search=qs('#target-search'); if(search) search.addEventListener('input',()=>{ state.filters.search=search.value; renderTargets(); });
-  const statusFilter=qs('#status-filter'); if(statusFilter) statusFilter.addEventListener('change',()=>{ state.filters.status=statusFilter.value; renderTargets(); });
+  const statusFilter=qs('#status-filter'); if(statusFilter) { statusFilter.value = state.filters.status; statusFilter.addEventListener('change',()=>{ state.filters.status=statusFilter.value; renderTargets(); }); }
   const priorityFilter=qs('#priority-filter'); if(priorityFilter) priorityFilter.addEventListener('change',()=>{ state.filters.priority=priorityFilter.value; renderTargets(); });
   const recentFilter=qs('#recent-filter'); if(recentFilter) recentFilter.addEventListener('change',()=>{ state.filters.recent=recentFilter.value; renderRecentlySubmitted(); });
   const reviewFilter=qs('#review-filter'); if(reviewFilter) reviewFilter.addEventListener('change',()=>{ state.filters.review=reviewFilter.value; renderRecentlySubmitted(); });

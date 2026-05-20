@@ -238,6 +238,7 @@ function submitSpy_(input) {
     return row;
   });
   addAudit_(input.employee || '', 'spy_submitted', input.targetId || target.targetId || '', input.name || target.targetName || '');
+  autoSendOrderCompletionIfReady_(target.orderId, input.employee || input.actor || 'system');
   return { ok:true, submissionId };
 }
 
@@ -267,6 +268,7 @@ function reviewSubmission_(input) {
     return t;
   });
   addAudit_(input.employee || 'manager', 'manager_' + status, target.targetId, target.targetName);
+  if (status === 'approved') autoSendOrderCompletionIfReady_(target.orderId, input.employee || input.actor || 'manager');
   return { ok:true };
 }
 
@@ -434,10 +436,40 @@ function calculateOrderCompletion_(orderId) {
   return { orderId, customer, total, approved, complete, totalPrice };
 }
 
+function ensureOrderRow_(orderId) {
+  if (!orderId) return null;
+  const existing = readObjectsWithRows_(SHEETS.orders).find(r => String(r.orderId || '') === String(orderId || ''));
+  if (existing) return existing;
+  const targets = getOrderTargets_(orderId);
+  if (!targets.length) return null;
+  const now = now_();
+  const totalPrice = targets.reduce((sum, row) => sum + num_(row.pricePerSpy), 0);
+  const first = targets[0] || {};
+  appendObject_(SHEETS.orders, {
+    orderId: orderId,
+    customer: first.customer || '',
+    requestedBy: '',
+    orderedAt: now,
+    targetCount: targets.length,
+    pricePerSpy: first.pricePerSpy || '',
+    totalPrice: totalPrice,
+    paymentStatus: first.customerPaymentStatus || 'unpaid',
+    employeePayoutStatus: first.employeePayoutStatus || 'unpaid',
+    newOrderNotifiedAt: '',
+    newOrderNotificationStatus: '',
+    completedAt: '',
+    completionNotifiedAt: '',
+    completionNotificationStatus: '',
+    notes: '',
+    createdAt: now,
+    updatedAt: now,
+  });
+  return readObjectsWithRows_(SHEETS.orders).find(r => String(r.orderId || '') === String(orderId || '')) || null;
+}
+
 function syncOrderCompletion_(orderId) {
   if (!orderId) return null;
-  const rows = readObjectsWithRows_(SHEETS.orders);
-  const order = rows.find(r => String(r.orderId || '') === String(orderId || ''));
+  const order = ensureOrderRow_(orderId);
   if (!order) return null;
   const completion = calculateOrderCompletion_(orderId);
   const updates = {
@@ -456,6 +488,47 @@ function syncOrderCompletion_(orderId) {
   return Object.assign({}, order, updates, completion);
 }
 
+function autoSendOrderCompletionIfReady_(orderId, actor) {
+  if (!orderId) return { ok:true, skipped:true, status:'no_order' };
+  const synced = syncOrderCompletion_(orderId);
+  if (!synced) return { ok:true, skipped:true, status:'order_missing' };
+  if (!synced.complete) return { ok:true, skipped:true, status:'not_complete' };
+
+  const row = ensureOrderRow_(orderId);
+  if (!row) return { ok:true, skipped:true, status:'order_missing' };
+  const alreadySent = row.completionNotifiedAt && row.completionNotificationStatus === 'sent';
+  if (alreadySent) return { ok:true, skipped:true, status:'already_sent' };
+
+  const updates = {
+    completedAt: row.completedAt || now_(),
+    completionNotifiedAt: now_(),
+    completionNotificationStatus: 'sent',
+    updatedAt: now_(),
+  };
+
+  const webhookUrl = _managerDiscordWebhookUrl();
+  if (!webhookUrl) {
+    updates.completionNotificationStatus = 'webhook_missing';
+    writeObjectAtRow_(sheet_(SHEETS.orders), row._row, updates);
+    const details = 'Checked: ' + MANAGER_WEBHOOK_KEYS.join(', ');
+    addAudit_(actor || 'system', 'order_completion_webhook_missing', orderId, details);
+    return { ok:true, notified:false, status:'webhook_missing', checkedKeys:MANAGER_WEBHOOK_KEYS, foundKeys:_existingWebhookKeys_(MANAGER_WEBHOOK_KEYS) };
+  }
+
+  const priceLine = synced.totalPrice ? '\nPrice total: ' + Number(synced.totalPrice).toLocaleString() : '';
+  const content = [
+    'Order complete: ' + orderId,
+    'Customer: ' + (synced.customer || row.customer || '-'),
+    'Delivered: ' + synced.approved + ' / ' + synced.total + ' approved',
+    'Total: ' + synced.total + ' spies' + priceLine,
+    'Ready to copy and send to customer.'
+  ].join('\n');
+  postDiscord_(webhookUrl, content);
+  writeObjectAtRow_(sheet_(SHEETS.orders), row._row, updates);
+  addAudit_(actor || 'system', 'order_completion_notified_auto', orderId, synced.customer || '');
+  return { ok:true, notified:true, status:updates.completionNotificationStatus };
+}
+
 function syncAllOrderCompletion_() {
   readObjects_(SHEETS.orders).forEach(order => syncOrderCompletion_(order.orderId));
 }
@@ -468,7 +541,7 @@ function sendOrderCompleteNotification_(input) {
   if (!synced) throw new Error('Order not found.');
   if (!synced.complete) throw new Error('Order is not complete yet.');
 
-  const row = readObjectsWithRows_(SHEETS.orders).find(r => String(r.orderId || '') === String(orderId));
+  const row = ensureOrderRow_(orderId);
   if (!row) throw new Error('Order not found.');
   const actor = input.actor || input.employee || 'manager';
   const statusOnly = input.markOnly === true || String(input.markOnly || '') === 'true';
@@ -513,7 +586,7 @@ function sendNewOrderNotification_(input) {
   if (!orderId) throw new Error('orderId is required.');
   const synced = syncOrderCompletion_(orderId);
   if (!synced) throw new Error('Order not found.');
-  const row = readObjectsWithRows_(SHEETS.orders).find(r => String(r.orderId || '') === String(orderId));
+  const row = ensureOrderRow_(orderId);
   if (!row) throw new Error('Order not found.');
   const actor = input.actor || input.employee || 'manager';
   const alreadySent = row.newOrderNotifiedAt && row.newOrderNotificationStatus === 'sent';
