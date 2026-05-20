@@ -631,16 +631,63 @@ function ensureExternalRequestAuthorized_() {
   throw new Error(message);
 }
 
+function discordRetryDelayMs_(response, attemptIndex) {
+  const headers = response && response.getAllHeaders ? response.getAllHeaders() : {};
+  const retryAfterRaw = headers['Retry-After'] || headers['retry-after'] || '';
+  const retryAfterSeconds = Number(retryAfterRaw);
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+    return Math.min(15000, Math.max(500, Math.round(retryAfterSeconds * 1000)));
+  }
+
+  const body = String(response && response.getContentText ? response.getContentText() : '');
+  const retryAfterMatch = body.match(/"retry_after"\s*:\s*([0-9.]+)/i);
+  if (retryAfterMatch) {
+    const retryAfterValue = Number(retryAfterMatch[1]);
+    if (Number.isFinite(retryAfterValue) && retryAfterValue > 0) {
+      // Discord may return retry_after in seconds (API) or milliseconds in some contexts.
+      const guessMs = retryAfterValue > 100 ? retryAfterValue : retryAfterValue * 1000;
+      return Math.min(15000, Math.max(500, Math.round(guessMs)));
+    }
+  }
+
+  return Math.min(15000, 1000 * Math.pow(2, Math.max(0, attemptIndex)));
+}
+
 function postDiscord_(webhookUrl, content) {
   ensureExternalRequestAuthorized_();
-  const res = UrlFetchApp.fetch(String(webhookUrl || '').trim(), {
-    method: 'post',
-    contentType: 'application/json',
-    payload: JSON.stringify({ content }),
-    muteHttpExceptions: true,
-  });
-  const code = res.getResponseCode();
-  if (code < 200 || code >= 300) throw new Error('Discord webhook failed with HTTP ' + code + ': ' + res.getContentText());
+  const url = String(webhookUrl || '').trim();
+  const maxAttempts = 3;
+  let lastCode = 0;
+  let lastBody = '';
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const res = UrlFetchApp.fetch(url, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({ content }),
+      muteHttpExceptions: true,
+    });
+    const code = res.getResponseCode();
+    const body = String(res.getContentText() || '');
+    lastCode = code;
+    lastBody = body;
+
+    if (code >= 200 && code < 300) return;
+
+    const looksRateLimited = code === 429 || /\b1015\b|rate\s*limit/i.test(body);
+    const canRetry = looksRateLimited && attempt < (maxAttempts - 1);
+    if (canRetry) {
+      Utilities.sleep(discordRetryDelayMs_(res, attempt));
+      continue;
+    }
+
+    if (looksRateLimited) {
+      throw new Error('Discord webhook rate-limited (HTTP ' + code + '). Please retry in a moment. Details: ' + body);
+    }
+    throw new Error('Discord webhook failed with HTTP ' + code + ': ' + body);
+  }
+
+  throw new Error('Discord webhook failed after retries with HTTP ' + lastCode + ': ' + lastBody);
 }
 
 function updateOrderPayment_(orderId, status) {
