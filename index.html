@@ -462,7 +462,21 @@ const JOB_SPECIAL_URL = "https://www.torn.com/companies.php?step=your&type=1";
 const THEME_KEY = "torn_theme";
 // ===== Helpers =====
 function qs(sel){ return document.querySelector(sel); }
-function setStatus(msg){ const e=qs('#err'); if(e) e.textContent = msg || ''; }
+function setStatus(msg) {
+  const e = qs('#err');
+  if (!e) return;
+  e.textContent = msg || '';
+  e.classList.remove('danger-box', 'warning-box', 'muted');
+  if (!msg) return;
+  const lower = String(msg).toLowerCase();
+  if (lower.includes('error') || lower.includes('fail') || lower.includes('network')) {
+    e.classList.add('danger-box');
+  } else if (lower.includes('warn')) {
+    e.classList.add('warning-box');
+  } else {
+    e.classList.add('muted');
+  }
+}
 function normalizeEmployeeName(name){ return String(name || '').trim().toLowerCase(); }
 function escapeHtml(v){ return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
