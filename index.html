@@ -202,6 +202,8 @@ th { color:var(--muted); font-size:12px; }
                 <option value="plain">Plain text</option>
               </select>
               <button id="copy-all">Copy all visible</button>
+              <input id="copy-match" placeholder='Copy containing e.g. "Scallywags"'>
+              <button id="copy-matching">Copy matching</button>
             </div>
             <div id="recent" class="grid cards"></div>
           </div>
@@ -1396,6 +1398,29 @@ function getVisibleSubmitted(){
 
 function copySubmittedResults(format){
   const tasks = getVisibleSubmitted();
+  return formatSubmittedTasks(tasks, format);
+}
+
+function submittedSearchText(target){
+  return [
+    target.targetName,
+    target.targetId,
+    target.notes,
+    target.claimedBy,
+    target.formatted,
+    target.payload && target.payload.formatted,
+    target.payload && target.payload.name,
+    target.payload && target.payload.targetId
+  ].filter(Boolean).join('\n').toLowerCase();
+}
+
+function copySubmittedResultsMatching(needle, format){
+  const query = String(needle || '').trim().toLowerCase();
+  if (!query) throw new Error('Enter text to match before copying.');
+  return formatSubmittedTasks(getVisibleSubmitted().filter(t => submittedSearchText(t).includes(query)), format);
+}
+
+function formatSubmittedTasks(tasks, format){
   if (format === 'discord') {
     return tasks.map(t => '**' + (t.targetName || 'Unknown') + (t.targetId ? ' [' + t.targetId + ']' : '') + '**\n```' + ((t.formatted || (t.payload && t.payload.formatted) || '').trim()) + '\n```').join('\n\n');
   }
@@ -1453,6 +1478,21 @@ async function copyTarget(target){
       }catch(e){
         const err = document.getElementById('err');
         if (err) err.textContent = 'Copy failed: ' + (e.message||e);
+      }
+    });
+  }
+  const copyMatchingBtn = document.getElementById('copy-matching');
+  if (copyMatchingBtn){
+    copyMatchingBtn.addEventListener('click', async ()=>{
+      try{
+        const text = copySubmittedResultsMatching(qs('#copy-match')?.value, state.filters.copyFormat);
+        if (!text) throw new Error('No visible submitted results matched that text.');
+        await navigator.clipboard.writeText(text);
+        const err = document.getElementById('err');
+        if (err) err.textContent = 'Copied matching submitted results to clipboard.';
+      }catch(e){
+        const err = document.getElementById('err');
+        if (err) err.textContent = 'Copy matching failed: ' + (e.message||e);
       }
     });
   }
