@@ -14,6 +14,11 @@ Setup:
 4. Set Script Properties: `API_KEY`, `ADMIN_KEY`, and optionally `MANAGER_DISCORD_WEBHOOK_URL` and `EMPLOYEE_DISCORD_WEBHOOK_URL`.
 
 `MANAGER_DISCORD_WEBHOOK_URL` is used for completed order notifications. `EMPLOYEE_DISCORD_WEBHOOK_URL` is used for new order notifications. `DISCORD_WEBHOOK_URL` still works as a fallback if you only want one webhook.
+
+Accepted webhook aliases:
+
+- Manager: `MANAGER_DISCORD_WEBHOOK_URL`, `DISCORD_MANAGER_WEBHOOK_URL`, `MANAGER_WEBHOOK_URL`, `DISCORD_WEBHOOK_URL`
+- Employee/new orders: `EMPLOYEE_DISCORD_WEBHOOK_URL`, `DISCORD_EMPLOYEE_WEBHOOK_URL`, `EMPLOYEE_WEBHOOK_URL`, `DISCORD_WEBHOOK_URL`
 5. Deploy as Web App.
 6. Use the Web App URL as `DEFAULT_API` in `index.html` or keep the existing URL if that deployment is updated.
 

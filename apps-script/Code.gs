@@ -1,8 +1,12 @@
 function _props(){ return PropertiesService.getScriptProperties(); }
 function _apiKey(){ return _props().getProperty('API_KEY') || ''; }
 function _adminKey(){ return _props().getProperty('ADMIN_KEY') || ''; }
-function _managerDiscordWebhookUrl(){ return _props().getProperty('MANAGER_DISCORD_WEBHOOK_URL') || _props().getProperty('DISCORD_WEBHOOK_URL') || ''; }
-function _employeeDiscordWebhookUrl(){ return _props().getProperty('EMPLOYEE_DISCORD_WEBHOOK_URL') || _props().getProperty('DISCORD_WEBHOOK_URL') || ''; }
+const MANAGER_WEBHOOK_KEYS = ['MANAGER_DISCORD_WEBHOOK_URL','DISCORD_MANAGER_WEBHOOK_URL','MANAGER_WEBHOOK_URL','DISCORD_WEBHOOK_URL'];
+const EMPLOYEE_WEBHOOK_KEYS = ['EMPLOYEE_DISCORD_WEBHOOK_URL','DISCORD_EMPLOYEE_WEBHOOK_URL','EMPLOYEE_WEBHOOK_URL','DISCORD_WEBHOOK_URL'];
+function _firstProperty_(keys){ for (const key of keys){ const value = _props().getProperty(key); if (value) return value; } return ''; }
+function _managerDiscordWebhookUrl(){ return _firstProperty_(MANAGER_WEBHOOK_KEYS); }
+function _employeeDiscordWebhookUrl(){ return _firstProperty_(EMPLOYEE_WEBHOOK_KEYS); }
+function _existingWebhookKeys_(keys){ return keys.filter(key => !!_props().getProperty(key)); }
 
 const SHEETS = {
   targets: 'Targets',
@@ -63,6 +67,7 @@ function dispatch_(action, input) {
   if (action === 'employeePayout') return recordEmployeePayout_(input);
   if (action === 'history') return archiveHistory_(input);
   if (action === 'verifyAdmin') return verifyAdmin_(input);
+  if (action === 'webhookDebug') return webhookDebug_(input);
   if (action === 'sendNewOrderNotification') return sendNewOrderNotification_(input);
   if (action === 'sendOrderCompleteNotification') return sendOrderCompleteNotification_(input);
   if (action === 'audit') return addAudit_(input.actor || input.employee || 'system', input.auditAction || 'audit', input.targetId || '', input.details || '');
@@ -349,6 +354,19 @@ function verifyAdmin_(input) {
   return { ok:true, admin:true };
 }
 
+function webhookDebug_(input) {
+  requireAdmin_(input);
+  return {
+    ok:true,
+    managerConfigured: !!_managerDiscordWebhookUrl(),
+    employeeConfigured: !!_employeeDiscordWebhookUrl(),
+    managerKeysFound: _existingWebhookKeys_(MANAGER_WEBHOOK_KEYS),
+    employeeKeysFound: _existingWebhookKeys_(EMPLOYEE_WEBHOOK_KEYS),
+    managerKeysChecked: MANAGER_WEBHOOK_KEYS,
+    employeeKeysChecked: EMPLOYEE_WEBHOOK_KEYS,
+  };
+}
+
 function latestPayloadForTarget_(targetRowId) {
   const rows = readObjects_(SHEETS.submissions).filter(r => String(r.targetRowId) === String(targetRowId));
   if (!rows.length) return null;
@@ -469,8 +487,9 @@ function sendOrderCompleteNotification_(input) {
     if (!webhookUrl) {
       updates.completionNotificationStatus = 'webhook_missing';
       writeObjectAtRow_(sheet_(SHEETS.orders), row._row, updates);
-      addAudit_(actor, 'order_completion_webhook_missing', orderId, synced.customer || '');
-      return { ok:true, notified:false, status:'webhook_missing' };
+      const details = 'Checked: ' + MANAGER_WEBHOOK_KEYS.join(', ');
+      addAudit_(actor, 'order_completion_webhook_missing', orderId, details);
+      return { ok:true, notified:false, status:'webhook_missing', checkedKeys:MANAGER_WEBHOOK_KEYS, foundKeys:_existingWebhookKeys_(MANAGER_WEBHOOK_KEYS) };
     }
     const priceLine = synced.totalPrice ? '\nPrice total: ' + Number(synced.totalPrice).toLocaleString() : '';
     const content = [
@@ -480,12 +499,7 @@ function sendOrderCompleteNotification_(input) {
       'Total: ' + synced.total + ' spies' + priceLine,
       'Ready to copy and send to customer.'
     ].join('\n');
-    UrlFetchApp.fetch(webhookUrl, {
-      method: 'post',
-      contentType: 'application/json',
-      payload: JSON.stringify({ content }),
-      muteHttpExceptions: true,
-    });
+    postDiscord_(webhookUrl, content);
   }
 
   writeObjectAtRow_(sheet_(SHEETS.orders), row._row, updates);
@@ -514,8 +528,9 @@ function sendNewOrderNotification_(input) {
   if (!webhookUrl) {
     updates.newOrderNotificationStatus = 'webhook_missing';
     writeObjectAtRow_(sheet_(SHEETS.orders), row._row, updates);
-    addAudit_(actor, 'new_order_webhook_missing', orderId, synced.customer || row.customer || '');
-    return { ok:true, notified:false, status:'webhook_missing' };
+    const details = 'Checked: ' + EMPLOYEE_WEBHOOK_KEYS.join(', ');
+    addAudit_(actor, 'new_order_webhook_missing', orderId, details);
+    return { ok:true, notified:false, status:'webhook_missing', checkedKeys:EMPLOYEE_WEBHOOK_KEYS, foundKeys:_existingWebhookKeys_(EMPLOYEE_WEBHOOK_KEYS) };
   }
 
   const priceLine = synced.totalPrice ? '\nPrice total: ' + Number(synced.totalPrice).toLocaleString() : '';
@@ -526,15 +541,21 @@ function sendNewOrderNotification_(input) {
     'Payment: ' + (row.paymentStatus || 'unpaid') + priceLine,
     'Ready for claiming.'
   ].join('\n');
-  UrlFetchApp.fetch(webhookUrl, {
+  postDiscord_(webhookUrl, content);
+  writeObjectAtRow_(sheet_(SHEETS.orders), row._row, updates);
+  addAudit_(actor, 'new_order_notified', orderId, synced.customer || row.customer || '');
+  return { ok:true, notified:true, status:'sent' };
+}
+
+function postDiscord_(webhookUrl, content) {
+  const res = UrlFetchApp.fetch(String(webhookUrl || '').trim(), {
     method: 'post',
     contentType: 'application/json',
     payload: JSON.stringify({ content }),
     muteHttpExceptions: true,
   });
-  writeObjectAtRow_(sheet_(SHEETS.orders), row._row, updates);
-  addAudit_(actor, 'new_order_notified', orderId, synced.customer || row.customer || '');
-  return { ok:true, notified:true, status:'sent' };
+  const code = res.getResponseCode();
+  if (code < 200 || code >= 300) throw new Error('Discord webhook failed with HTTP ' + code + ': ' + res.getContentText());
 }
 
 function updateOrderPayment_(orderId, status) {

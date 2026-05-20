@@ -2521,8 +2521,9 @@ async function sendOrderCompletionNotification(orderId, markOnly){
       markOnly: !!markOnly
     });
     const status = result && result.status ? result.status : (markOnly ? 'marked' : 'sent');
+    const debug = result && result.checkedKeys ? ' Checked: ' + result.checkedKeys.join(', ') + '. Found: ' + ((result.foundKeys || []).join(', ') || 'none') + '.' : '';
     addAuditLog(markOnly ? 'manager_marked_order_completion_sent' : 'manager_sent_order_completion_notification', orderId, status);
-    setStatus('Order completion notification status: ' + status + '.');
+    setStatus('Order completion notification status: ' + status + '.' + debug);
     await refresh();
   }catch(e){
     setStatus('Order completion notification failed: ' + String(e.message || e));
@@ -2537,8 +2538,9 @@ async function sendNewOrderNotification(orderId){
       actor: state.me || 'manager'
     });
     const status = result && result.status ? result.status : 'sent';
+    const debug = result && result.checkedKeys ? ' Checked: ' + result.checkedKeys.join(', ') + '. Found: ' + ((result.foundKeys || []).join(', ') || 'none') + '.' : '';
     addAuditLog('manager_sent_new_order_notification', orderId, status);
-    setStatus('New order notification status: ' + status + '.');
+    setStatus('New order notification status: ' + status + '.' + debug);
     await refresh();
   }catch(e){
     setStatus('New order notification failed: ' + String(e.message || e));
