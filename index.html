@@ -1488,10 +1488,10 @@ function renderLedger(){
   }
   const submitted = state.tasks.filter(t => t.status === 'submitted');
   const customerDue = state.tasks.reduce((sum,t)=>sum + ((t.customerPaymentStatus || 'unpaid') === 'paid' ? 0 : Number(t.pricePerSpy || 0)), 0);
-  const employeeDue = submitted.reduce((sum,t)=>sum + ((t.employeePayoutStatus || 'unpaid') === 'paid' ? 0 : Number(t.employeeRate || 0)), 0);
+  const payoutRows = getEmployeePayoutSuggestions();
+  const employeeDue = payoutRows.reduce((sum, row) => sum + Number(row.owed || 0), 0);
   const collected = state.customerPayments.reduce((sum,p)=>sum + Number(p.amount || 0), 0);
   const paidOut = state.employeePayouts.reduce((sum,p)=>sum + Number(p.amount || 0), 0);
-  const payoutRows = getEmployeePayoutSuggestions();
   const rows = [
     ['Customer unpaid value', customerDue],
     ['Employee unpaid value', employeeDue],
@@ -1508,25 +1508,31 @@ function renderLedger(){
 function getEmployeePayoutSuggestions(){
   const due = {};
   state.tasks
-    .filter(t => t.status === 'submitted')
+    .filter(t => t.status === 'submitted' && String(t.reviewStatus || 'pending_review') === 'approved')
     .forEach(task => {
-      const employee = String(task.claimedBy || '').trim();
-      if (!employee) return;
-      due[employee] = (due[employee] || 0) + Number(task.employeeRate || 0);
+      const employeeRaw = String(task.claimedBy || '').trim();
+      if (!employeeRaw) return;
+      const employeeKey = normalizeEmployeeName(employeeRaw);
+      if (!employeeKey) return;
+      if (!due[employeeKey]) due[employeeKey] = { displayName: employeeRaw, amount: 0 };
+      due[employeeKey].amount += Number(task.employeeRate || 0);
     });
 
   const paid = {};
-  state.employeePayouts.forEach(row => {
-    const employee = String(row.employee || '').trim();
-    if (!employee) return;
-    paid[employee] = (paid[employee] || 0) + Number(row.amount || 0);
-  });
+  state.employeePayouts
+    .filter(row => String(row.status || '').toLowerCase() === 'paid')
+    .forEach(row => {
+      const employeeRaw = String(row.employee || '').trim();
+      const employeeKey = normalizeEmployeeName(employeeRaw);
+      if (!employeeKey) return;
+      paid[employeeKey] = (paid[employeeKey] || 0) + Number(row.amount || 0);
+    });
 
   return Object.keys(due)
-    .map(employee => {
-      const owed = Math.max(0, Number(due[employee] || 0) - Number(paid[employee] || 0));
+    .map(employeeKey => {
+      const owed = Math.max(0, Number(due[employeeKey].amount || 0) - Number(paid[employeeKey] || 0));
       return {
-        employee,
+        employee: due[employeeKey].displayName,
         owed,
         status: owed > 0 ? 'You owe this employee' : 'Settled'
       };
