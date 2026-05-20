@@ -1509,6 +1509,19 @@ async function refresh(){
     state.employeePayouts=data.employeePayouts||[];
     if(data.deliveryHistory&&data.deliveryHistory.length) state.history=data.deliveryHistory.concat(state.history).slice(0,500);
     if (state.admin) await verifyAdminKey();
+    if (state.adminVerified) {
+      const reviewSync = await reconcileLocalReviewsToServer_();
+      if (reviewSync.synced > 0) {
+        const latest = await call('?action=list','GET');
+        state.tasks = latest.tasks || state.tasks;
+        state.orders = latest.orders || state.orders;
+        state.customerPayments = latest.customerPayments || state.customerPayments;
+        state.employeePayouts = latest.employeePayouts || state.employeePayouts;
+      }
+      if (reviewSync.synced > 0 || reviewSync.failed > 0) {
+        setStatus('Review sync: ' + reviewSync.synced + ' updated' + (reviewSync.failed ? (', ' + reviewSync.failed + ' failed') : '') + '.');
+      }
+    }
     state.lastUpdated = new Date().toISOString();
     render();
   }catch(e){
@@ -1517,6 +1530,39 @@ async function refresh(){
   }
   enforceVisibility();
 }
+async function reconcileLocalReviewsToServer_(){
+  let synced = 0;
+  let failed = 0;
+  const submitted = state.tasks.filter(task => task.status === 'submitted');
+  for (const task of submitted) {
+    const local = state.reviews[taskKey(task)];
+    if (!local) continue;
+    const localStatus = String(local.status || '');
+    if (localStatus !== 'approved' && localStatus !== 'rejected') continue;
+    const remoteStatus = String(task.reviewStatus || 'pending_review');
+    if (remoteStatus === localStatus) continue;
+
+    const payload = {
+      action: 'review',
+      targetRowId: task.id,
+      status: localStatus,
+      employee: state.me.trim()
+    };
+    if (local.editedPayload) payload.payload = local.editedPayload;
+
+    try {
+      await call('', 'POST', payload);
+      task.reviewStatus = localStatus;
+      synced += 1;
+      addAuditLog('manager_review_resynced', task.targetId, localStatus);
+    } catch (e) {
+      failed += 1;
+      addAuditLog('manager_review_resync_failed', task.targetId, String(e.message || e));
+    }
+  }
+  return { synced, failed };
+}
+
 async function claim(id){
   if(!state.me){ alert('Set your display name first.'); return; }
   const task = state.tasks.find(t => String(t.id)===String(id));
