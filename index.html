@@ -6,27 +6,29 @@
 <title>Bring Em Closer � Stat Spy Coordinator</title>
 <style>
 :root {
-  --bg: #08110d;
-  --card: rgba(19,35,24,.88);
-  --card-strong: #132318;
-  --line: rgba(116, 168, 134, .18);
-  --muted: #a8c3b2;
-  --text: #e8f5ee;
-  --accent: #22c55e;
-  --good: #22c55e;
-  --warn: #fbbf24;
-  --danger: #ef4444;
-  --blue: #60a5fa;
+  --bg: #f4efe4;
+  --card: rgba(255,252,244,.9);
+  --card-strong: #fffaf0;
+  --line: rgba(37, 69, 49, .16);
+  --muted: #6b756b;
+  --text: #172118;
+  --accent: #167344;
+  --good: #1f9d55;
+  --warn: #d99000;
+  --danger: #c24135;
+  --blue: #2563eb;
+  --ink: #172118;
+  --cream: #fff8ea;
 }
 * { box-sizing: border-box; }
 body {
   margin: 0;
   background:
-    radial-gradient(circle at top left, rgba(34,197,94,.18), transparent 34rem),
-    radial-gradient(circle at 80% 10%, rgba(96,165,250,.10), transparent 28rem),
-    linear-gradient(135deg, #07100c 0%, #0d1a12 48%, #08110d 100%);
+    radial-gradient(circle at top left, rgba(22,115,68,.18), transparent 34rem),
+    radial-gradient(circle at 82% 5%, rgba(217,144,0,.14), transparent 30rem),
+    linear-gradient(135deg, #faf4e8 0%, #eef3df 48%, #f4efe4 100%);
   color: var(--text);
-  font: 14px/1.4 system-ui, Segoe UI, Roboto, Helvetica, Arial;
+  font: 14px/1.45 "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
   min-height: 100vh;
 }
 .wrap { max-width: 1180px; margin: 24px auto; padding: 0 16px; }
@@ -35,7 +37,7 @@ h1 { font-size: clamp(28px, 4vw, 42px); margin: 0 0 6px; letter-spacing: -.04em;
 .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0 18px; }
 input, textarea, button, select { font: inherit; }
 input, textarea, select {
-  background: rgba(8,17,13,.78);
+  background: rgba(255,255,255,.78);
   border: 1px solid var(--line);
   color: var(--text);
   border-radius: 12px;
@@ -43,14 +45,14 @@ input, textarea, select {
   outline: none;
 }
 input:focus, textarea:focus, select:focus {
-  border-color: rgba(34,197,94,.75);
-  box-shadow: 0 0 0 3px rgba(34,197,94,.13);
+  border-color: rgba(22,115,68,.65);
+  box-shadow: 0 0 0 3px rgba(22,115,68,.12);
 }
 textarea { width: 100%; min-height: 140px; resize: vertical; }
 button {
-  background: linear-gradient(180deg, rgba(34,197,94,.22), rgba(20,83,45,.9));
-  color: #f1fff7;
-  border: 1px solid rgba(74,222,128,.35);
+  background: linear-gradient(180deg, #1f8a56, #126239);
+  color: #fffdf5;
+  border: 1px solid rgba(18,98,57,.3);
   padding: 10px 14px;
   border-radius: 10px;
   cursor: pointer;
@@ -58,17 +60,17 @@ button {
   font-weight: 700;
   transition: transform .12s ease, border-color .12s ease, background .12s ease;
 }
-button:hover { border-color: rgba(134,239,172,.8); transform: translateY(-1px); }
+button:hover { border-color: rgba(18,98,57,.8); transform: translateY(-1px); box-shadow: 0 10px 22px rgba(18,98,57,.18); }
 button:disabled { opacity: .55; cursor: not-allowed; transform: none; }
 .tabs { display: flex; gap: 6px; margin: 0 0 14px; flex-wrap: wrap; }
 .tab {
   padding: 8px 12px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(8,17,13,.72);
-  color: #d8f7e4;
+  background: rgba(255,255,255,.58);
+  color: #244130;
 }
-.tab.active { background: rgba(34,197,94,.18); border-color: rgba(74,222,128,.65); }
+.tab.active { background: #173f2b; border-color: #173f2b; color:#fffaf0; }
 .grid { display: grid; gap: 12px; }
 @media (min-width: 800px) {
   .grid.cards { grid-template-columns: repeat(3, 1fr); }
@@ -77,7 +79,7 @@ button:disabled { opacity: .55; cursor: not-allowed; transform: none; }
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 20px;
-  box-shadow: 0 18px 55px rgba(0,0,0,.28);
+  box-shadow: 0 18px 55px rgba(50,42,28,.12);
   backdrop-filter: blur(12px);
 }
 .card .hd { padding: 16px 16px 0; font-weight: 800; letter-spacing: -.01em; }
@@ -85,9 +87,9 @@ button:disabled { opacity: .55; cursor: not-allowed; transform: none; }
 .muted { color: var(--muted); }
 .warn-text { color: var(--warn); }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.top-controls { position: sticky; top: 0; z-index: 3; background: linear-gradient(180deg, rgba(8,17,13,.98) 78%, rgba(8,17,13,0)); padding-top: 8px; padding-bottom: 8px; }
+.top-controls { position: sticky; top: 0; z-index: 3; background: linear-gradient(180deg, rgba(244,239,228,.98) 78%, rgba(244,239,228,0)); padding-top: 8px; padding-bottom: 8px; }
 .dashboard { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 8px; margin-bottom: 12px; }
-.dash-card { background:linear-gradient(180deg, rgba(14,22,38,.9), rgba(8,17,13,.85)); border:1px solid var(--line); border-radius:16px; padding:12px 14px; }
+.dash-card { background:linear-gradient(180deg, rgba(255,255,255,.9), rgba(255,248,234,.82)); border:1px solid var(--line); border-radius:16px; padding:12px 14px; }
 .dash-card .label { color: var(--muted); font-size: 12px; }
 .dash-card .value { font-size: 20px; font-weight: 700; margin-top: 2px; }
 .filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
@@ -101,7 +103,7 @@ button:disabled { opacity: .55; cursor: not-allowed; transform: none; }
   font-weight: 700;
   letter-spacing: .02em;
 }
-.status-open { color: #fff; background: #2a3a63; }
+.status-open { color: #173f2b; background: #dceee1; }
 .status-claimed { color: #111; background: var(--warn); }
 .status-submitted { color: #111; background: var(--good); }
 .status-stale { color: #fff; background: var(--danger); border-color: #f87171; }
@@ -112,8 +114,8 @@ button:disabled { opacity: .55; cursor: not-allowed; transform: none; }
 .status-rejected { color:#fff; background:#991b1b; border-color:#f87171; }
 .priority-rush { color:#fff; background:#b91c1c; border-color:#f87171; }
 .priority-high { color:#111; background:#fb923c; border-color:#fdba74; }
-.priority-normal { color:#dbeafe; background:#1e3a8a; border-color:#3b82f6; }
-.priority-low { color:#dcfce7; background:#14532d; border-color:#22c55e; }
+.priority-normal { color:#173f2b; background:#dceee1; border-color:#99c7a6; }
+.priority-low { color:#244130; background:#edf7df; border-color:#bfdb9b; }
 .target-card.warning { border-color: var(--warn); box-shadow: 0 0 0 1px rgba(251,191,36,.25); }
 .target-card.stale { border-color: var(--danger); box-shadow: 0 0 0 1px rgba(239,68,68,.35); }
 .target-title { display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
@@ -130,14 +132,14 @@ th { color:var(--muted); font-size:12px; }
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   white-space: pre-wrap;
-  background: #0e1626;
-  border: 1px solid #22314f;
+  background: rgba(255,255,255,.68);
+  border: 1px solid var(--line);
   border-radius: 10px;
   padding: 10px;
 }
 .divider { height: 1px; background: #1a2744; margin: 8px 0; }
-.progress-wrap { border:1px solid var(--line); background:rgba(8,17,13,.78); border-radius:14px; padding:10px; }
-.progress-bar { height:12px; background:#0b1410; border-radius:999px; overflow:hidden; border:1px solid rgba(255,255,255,.06); }
+.progress-wrap { border:1px solid var(--line); background:rgba(255,255,255,.72); border-radius:14px; padding:10px; }
+.progress-bar { height:12px; background:#e7dfd0; border-radius:999px; overflow:hidden; border:1px solid rgba(23,33,24,.08); }
 .progress-fill { height:100%; width:0%; background:linear-gradient(90deg, var(--accent), var(--blue)); transition:width .18s ease; }
 .progress-meta { display:flex; justify-content:space-between; gap:8px; margin-top:8px; color:var(--muted); font-size:12px; flex-wrap:wrap; }
 @media (max-width: 760px) {
@@ -389,6 +391,7 @@ const AUDIT_KEY = "torn_spy_audit_log";
 const REVIEW_KEY = "torn_spy_review_overrides";
 const ASSIGNMENT_KEY = "torn_spy_assignments";
 const HISTORY_KEY = "torn_spy_delivery_history";
+const JOB_SPECIAL_URL = "https://www.torn.com/companies.php?step=your&type=1";
 // ===== Helpers =====
 function qs(sel){ return document.querySelector(sel); }
 function setStatus(msg){ const e=qs('#err'); if(e) e.textContent = msg || ''; }
@@ -924,10 +927,14 @@ function renderDashboard(){
     ['Claimed targets', state.tasks.filter(t => t.status === 'claimed').length],
     ['Submitted today', submittedToday],
     ['Stale claims', state.tasks.filter(isClaimStale).length],
-    ['Customer unpaid', state.tasks.filter(t => (t.customerPaymentStatus || 'unpaid') !== 'paid').length],
-    ['Employee unpaid', state.tasks.filter(t => t.status === 'submitted' && (t.employeePayoutStatus || 'unpaid') !== 'paid').length],
     ['Last updated', state.lastUpdated ? new Date(state.lastUpdated).toLocaleTimeString() : '-']
   ];
+  if (state.admin) {
+    values.splice(4, 0,
+      ['Customer unpaid', state.tasks.filter(t => (t.customerPaymentStatus || 'unpaid') !== 'paid').length],
+      ['Employee unpaid', state.tasks.filter(t => t.status === 'submitted' && (t.employeePayoutStatus || 'unpaid') !== 'paid').length]
+    );
+  }
   el.innerHTML = values.map(([label,value]) => `<div class="dash-card"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div></div>`).join('');
 }
 
@@ -955,6 +962,12 @@ function renderTargetCard(t){
   const priority = normalizePriority(t.priority);
   const claimedAt = getClaimedAt(t);
   const assignment = getAssignment(t);
+  const privateChips = state.admin ? `
+      ${t.customer ? '<span class="pill">Customer: ' + escapeHtml(t.customer) + '</span>' : ''}
+      ${t.orderId ? '<span class="pill">Order: ' + escapeHtml(t.orderId) + '</span>' : ''}
+      <span class="pill">Customer pay: ${escapeHtml(t.customerPaymentStatus || 'unpaid')}</span>
+      <span class="pill">Employee pay: ${escapeHtml(t.employeePayoutStatus || 'unpaid')}</span>
+    ` : '';
   const card = document.createElement('div');
   card.className = 'card target-card' + (status === 'stale' ? ' stale' : isClaimWarning(t) ? ' warning' : '');
   const bd = document.createElement('div');
@@ -974,10 +987,7 @@ function renderTargetCard(t){
       ${assignment ? '<span class="pill status-assigned">Assigned to: ' + escapeHtml(assignment.assignedTo) + '</span>' : ''}
       ${t.claimedBy ? '<span class="pill">Claimed by: ' + escapeHtml(t.claimedBy) + '</span>' : ''}
       ${t.claimedBy ? '<span class="pill">Age: ' + escapeHtml(formatAge(claimedAt)) + '</span>' : ''}
-      ${t.customer ? '<span class="pill">Customer: ' + escapeHtml(t.customer) + '</span>' : ''}
-      ${t.orderId ? '<span class="pill">Order: ' + escapeHtml(t.orderId) + '</span>' : ''}
-      <span class="pill">Customer pay: ${escapeHtml(t.customerPaymentStatus || 'unpaid')}</span>
-      <span class="pill">Employee pay: ${escapeHtml(t.employeePayoutStatus || 'unpaid')}</span>
+      ${privateChips}
     </div>
     ${t.notes ? '<div class="muted">' + escapeHtml(t.notes) + '</div>' : ''}
   `;
@@ -987,6 +997,7 @@ function renderTargetCard(t){
   bd.appendChild(row);
   if (status === 'open' || (status === 'assigned' && normalizeEmployeeName(assignment.assignedTo) === normalizeEmployeeName(state.me))) addButton(row, isTaskBusy(t.id) ? 'Claiming...' : 'Claim', () => claim(t.id), isTaskBusy(t.id));
   addButton(row, 'Copy', () => copyTarget(t));
+  addButton(row, 'Job special', () => openJobSpecial(t));
   if (state.admin) {
     const assignInput = document.createElement('input');
     assignInput.placeholder = 'Assign to display name';
@@ -2116,9 +2127,25 @@ function formatSubmittedTasks(tasks, format){
 }
 
 async function copyTarget(target){
-  const text = (target.targetName || 'Unknown') + (target.targetId ? ' [' + target.targetId + ']' : '') + (target.notes ? ' - ' + target.notes : '');
+  const text = formatTargetReference(target) + (target.notes ? ' - ' + target.notes : '');
   await navigator.clipboard.writeText(text);
   setStatus('Target copied.');
+}
+
+function formatTargetReference(target){
+  return (target.targetName || 'Unknown') + (target.targetId ? ' [' + target.targetId + ']' : '');
+}
+
+async function openJobSpecial(target){
+  const ref = formatTargetReference(target);
+  const popup = window.open(JOB_SPECIAL_URL, '_blank', 'noopener');
+  try{
+    await navigator.clipboard.writeText(ref);
+    setStatus('Copied "' + ref + '" and opened Torn job special.');
+  }catch(e){
+    setStatus('Opened Torn job special. Copy failed: ' + (e.message || e));
+  }
+  if (!popup) setStatus('Copied "' + ref + '". Popup was blocked; open ' + JOB_SPECIAL_URL);
 }
 
 
