@@ -108,6 +108,7 @@ function list_() {
 }
 
 function addTarget_(input) {
+  const orderId = resolveOrderIdForNewTarget_(input.orderId, input.requireExistingOrder);
   const id = uid_('target');
   const now = now_();
   const row = {
@@ -123,7 +124,7 @@ function addTarget_(input) {
     reviewStatus: '',
     assignedTo: input.assignedTo || '',
     assignedAt: input.assignedTo ? now : '',
-    orderId: input.orderId || '',
+    orderId: orderId,
     customer: input.customer || '',
     pricePerSpy: input.pricePerSpy || '',
     employeeRate: input.employeeRate || '',
@@ -135,15 +136,20 @@ function addTarget_(input) {
   appendObject_(SHEETS.targets, row);
   upsertOrderFromTarget_(row);
   addAudit_(input.employee || input.actor || '', 'target_added', row.targetId, row.targetName);
-  return { ok:true, id };
+  return { ok:true, id, orderId: row.orderId || '' };
 }
 
 function bulkAddTargets_(input) {
   const items = Array.isArray(input.targets) ? input.targets : [];
   if (!items.length) return { ok:true, added:0, ids:[] };
+  const hasBlankOrder = items.some(item => !String(item && item.orderId || '').trim());
+  const sharedGeneratedOrderId = hasBlankOrder ? resolveOrderIdForNewTarget_('', input.requireExistingOrder) : '';
   const now = now_();
   const ids = [];
   const rows = items.map(item => {
+    const rowOrderId = String(item && item.orderId || '').trim()
+      ? resolveOrderIdForNewTarget_(item.orderId, input.requireExistingOrder)
+      : sharedGeneratedOrderId;
     const id = uid_('target');
     ids.push(id);
     return {
@@ -159,7 +165,7 @@ function bulkAddTargets_(input) {
       reviewStatus: '',
       assignedTo: item.assignedTo || '',
       assignedAt: item.assignedTo ? now : '',
-      orderId: item.orderId || '',
+      orderId: rowOrderId,
       customer: item.customer || '',
       pricePerSpy: item.pricePerSpy || '',
       employeeRate: item.employeeRate || '',
@@ -174,7 +180,33 @@ function bulkAddTargets_(input) {
     upsertOrderFromTarget_(row);
     addAudit_(input.employee || input.actor || '', 'target_added', row.targetId, row.targetName);
   });
-  return { ok:true, added:rows.length, ids };
+  const orderIds = Array.from(new Set(rows.map(r => String(r.orderId || '')).filter(Boolean)));
+  return { ok:true, added:rows.length, ids, orderIds };
+}
+
+function resolveOrderIdForNewTarget_(requestedOrderId, requireExistingOrder) {
+  const clean = String(requestedOrderId || '').trim();
+  if (clean) {
+    if (requireExistingOrder && !orderExists_(clean)) throw new Error('Order does not exist. Pick an ongoing order.');
+    return clean;
+  }
+  if (requireExistingOrder) throw new Error('Order ID is required when only ongoing orders are allowed.');
+  return nextOrderId_();
+}
+
+function orderExists_(orderId) {
+  if (!orderId) return false;
+  return readObjects_(SHEETS.orders).some(row => String(row.orderId || '') === String(orderId || ''));
+}
+
+function nextOrderId_() {
+  const minStart = 3;
+  const numericIds = readObjects_(SHEETS.orders)
+    .map(row => String(row.orderId || '').trim())
+    .filter(value => /^\d+$/.test(value))
+    .map(value => Number(value));
+  if (!numericIds.length) return String(minStart);
+  return String(Math.max(minStart - 1, Math.max.apply(null, numericIds)) + 1);
 }
 
 function claimTarget_(input) {

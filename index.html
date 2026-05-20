@@ -195,6 +195,19 @@ th { color:var(--muted); font-size:12px; }
 .app-footer a:hover { color:var(--text); border-color:var(--text); }
 body:not(.is-admin) .manager-only { display:none !important; }
 .is-admin .filters.manager-only { display:flex; }
+.manager-accordion {
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+.manager-accordion > summary {
+  cursor: pointer;
+  padding: 12px 14px;
+  font-weight: 620;
+  list-style: none;
+}
+.manager-accordion > summary::-webkit-details-marker { display: none; }
 @media (max-width: 760px) {
   .wrap { margin: 10px auto; padding: 0 10px; }
   .dashboard { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -287,7 +300,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
           <input id="m-name" placeholder="Target name (e.g., tc103)" style="flex:1">
           <input id="m-id" placeholder="Target ID (optional)" style="width:180px">
           <input id="m-notes" placeholder="Notes (faction, deadline)" style="flex:1">
-          <input id="m-order" placeholder="Order ID" style="width:150px">
+          <input id="m-order" list="known-orders" placeholder="Order ID" style="width:150px">
           <input id="m-customer" placeholder="Customer" style="width:160px">
           <input id="m-price" type="number" min="0" step="1" placeholder="Customer price" style="width:150px">
           <input id="m-rate" type="number" min="0" step="1" placeholder="Employee rate" style="width:150px">
@@ -299,7 +312,11 @@ body:not(.is-admin) .manager-only { display:none !important; }
           </select>
           <button id="m-add">Add to Board</button>
         </div>
-        <div class="muted">New tasks appear on the board after refresh.</div>
+        <div class="row">
+          <label class="muted" style="display:flex;gap:8px;align-items:center"><input id="m-existing-order-only" type="checkbox">Only add to ongoing orders (no new order IDs)</label>
+        </div>
+        <datalist id="known-orders"></datalist>
+        <div class="muted">If no Order ID is set, the backend auto-generates the next numeric order starting from 3.</div>
       </div></div>
       <div class="card" style="margin-top:12px"><div class="hd">Mass Import</div><div class="bd grid">
         <div class="row">
@@ -380,7 +397,9 @@ body:not(.is-admin) .manager-only { display:none !important; }
         </div>
       </div>
 
-      <div class="card" style="margin-top:12px" id="audit-card">
+      <details class="manager-accordion" id="audit-card">
+        <summary>Audit Log</summary>
+        <div class="card" style="margin-top:0">
         <div class="hd">Audit Log</div>
         <div class="bd">
           <div class="filters">
@@ -394,9 +413,12 @@ body:not(.is-admin) .manager-only { display:none !important; }
           </div>
           <div id="audit-log" class="table-wrap"></div>
         </div>
-      </div>
+        </div>
+      </details>
 
-      <div class="card" style="margin-top:12px" id="history-card">
+      <details class="manager-accordion" id="history-card">
+        <summary>Delivery History</summary>
+        <div class="card" style="margin-top:0">
         <div class="hd">Delivery History</div>
         <div class="bd">
           <div class="filters">
@@ -410,9 +432,12 @@ body:not(.is-admin) .manager-only { display:none !important; }
           <div class="muted" style="margin-bottom:10px">Use this as your local history of who ordered what, when, what was delivered, and by whom.</div>
           <div id="history-list" class="table-wrap"></div>
         </div>
-      </div>
+        </div>
+      </details>
 
-      <div class="card" style="margin-top:12px" id="ledger-card">
+      <details class="manager-accordion" id="ledger-card" open>
+        <summary>Payments & Payout Ledger</summary>
+        <div class="card" style="margin-top:0">
         <div class="hd">Payments & Payout Ledger</div>
         <div class="bd">
           <div class="filters">
@@ -441,7 +466,8 @@ body:not(.is-admin) .manager-only { display:none !important; }
           </div>
           <div id="ledger-summary" class="table-wrap"></div>
         </div>
-      </div>
+        </div>
+      </details>
     </section>
 
     <footer class="app-footer">
@@ -1067,7 +1093,15 @@ function render(){
   renderHistory();
   renderLedger();
   renderCompletedOrders();
+  renderKnownOrders();
   renderImportPreview();
+}
+
+function renderKnownOrders(){
+  const list = qs('#known-orders');
+  if (!list) return;
+  const ids = getKnownOrderIds().sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric:true }));
+  list.innerHTML = ids.map(id => `<option value="${escapeHtml(id)}"></option>`).join('');
 }
 
 function renderDashboard(){
@@ -1457,6 +1491,7 @@ function renderLedger(){
   const employeeDue = submitted.reduce((sum,t)=>sum + ((t.employeePayoutStatus || 'unpaid') === 'paid' ? 0 : Number(t.employeeRate || 0)), 0);
   const collected = state.customerPayments.reduce((sum,p)=>sum + Number(p.amount || 0), 0);
   const paidOut = state.employeePayouts.reduce((sum,p)=>sum + Number(p.amount || 0), 0);
+  const payoutRows = getEmployeePayoutSuggestions();
   const rows = [
     ['Customer unpaid value', customerDue],
     ['Employee unpaid value', employeeDue],
@@ -1464,7 +1499,40 @@ function renderLedger(){
     ['Employee payouts recorded', paidOut],
     ['Estimated net after recorded payouts', collected - paidOut]
   ];
-  el.innerHTML = `<table><thead><tr><th>Metric</th><th>Amount</th></tr></thead><tbody>${rows.map(([k,v])=>`<tr><td>${escapeHtml(k)}</td><td>${Number(v || 0).toLocaleString()}</td></tr>`).join('')}</tbody></table>`;
+  const payoutTable = payoutRows.length
+    ? `<table style="margin-top:12px"><thead><tr><th>Employee</th><th>Owed</th><th>Status</th><th>Suggested action</th></tr></thead><tbody>${payoutRows.map(row => `<tr><td>${escapeHtml(row.employee)}</td><td>${Number(row.owed || 0).toLocaleString()}</td><td>${escapeHtml(row.status)}</td><td><button class="ledger-suggest" data-employee="${escapeHtml(row.employee)}" data-amount="${escapeHtml(String(row.owed))}">Suggest full payout</button></td></tr>`).join('')}</tbody></table>`
+    : '<div class="muted" style="margin-top:12px">No unpaid employee balances found.</div>';
+  el.innerHTML = `<table><thead><tr><th>Metric</th><th>Amount</th></tr></thead><tbody>${rows.map(([k,v])=>`<tr><td>${escapeHtml(k)}</td><td>${Number(v || 0).toLocaleString()}</td></tr>`).join('')}</tbody></table>${payoutTable}`;
+}
+
+function getEmployeePayoutSuggestions(){
+  const due = {};
+  state.tasks
+    .filter(t => t.status === 'submitted')
+    .forEach(task => {
+      const employee = String(task.claimedBy || '').trim();
+      if (!employee) return;
+      due[employee] = (due[employee] || 0) + Number(task.employeeRate || 0);
+    });
+
+  const paid = {};
+  state.employeePayouts.forEach(row => {
+    const employee = String(row.employee || '').trim();
+    if (!employee) return;
+    paid[employee] = (paid[employee] || 0) + Number(row.amount || 0);
+  });
+
+  return Object.keys(due)
+    .map(employee => {
+      const owed = Math.max(0, Number(due[employee] || 0) - Number(paid[employee] || 0));
+      return {
+        employee,
+        owed,
+        status: owed > 0 ? 'You owe this employee' : 'Settled'
+      };
+    })
+    .filter(row => row.owed > 0)
+    .sort((a,b) => b.owed - a.owed);
 }
 
 function renderCompletedOrders(){
@@ -1764,6 +1832,18 @@ function parseImportTarget(line){
   const notes = noteParts.join(' | ').trim();
 
   return { targetName: name, targetId, notes, priority };
+}
+
+function parseSingleTargetInput(rawInput){
+  const raw = String(rawInput || '').trim();
+  if (!raw) return { targetName:'', targetId:'' };
+  const bracket = raw.match(/^\s*([^\[\]\n]+?)\s*\[(\d{3,})\]\s*$/i);
+  if (bracket) return { targetName: cleanImportedName(bracket[1]), targetId: bracket[2] };
+  const paren = raw.match(/^\s*([^\(\)\n]+?)\s*\((\d{3,})\)\s*$/i);
+  if (paren) return { targetName: cleanImportedName(paren[1]), targetId: paren[2] };
+  const url = raw.match(/profiles\.php\?XID=(\d{3,})/i);
+  if (url) return { targetName: cleanImportedName(raw.replace(/https?:\/\/\S+/gi, '')), targetId: url[1] };
+  return { targetName: cleanImportedName(raw), targetId: '' };
 }
 
 function cleanImportedName(name){
@@ -2188,6 +2268,8 @@ function validateTargetImport(raw){
   let parsed = [];
   try{ parsed = extractImportTargets(raw); }catch(e){ return [{ status:'Invalid', targetId:'', targetName:'', notes:String(e.message || e), priority:'normal' }]; }
   const existing = new Map(state.tasks.filter(t => t.targetId).map(t => [String(t.targetId), t]));
+  const knownOrderIds = new Set(getKnownOrderIds().map(String));
+  const requireExistingOrder = !!qs('#m-existing-order-only')?.checked;
   const seen = new Set();
   const defaults = getBulkDefaults();
   return parsed.map(item => {
@@ -2208,6 +2290,12 @@ function validateTargetImport(raw){
     } else if (id && existing.has(id)) {
       status = 'Duplicate';
       note = note || 'Target ID already exists on the board.';
+    } else if (requireExistingOrder && !item.orderId) {
+      status = 'Invalid';
+      note = note || 'Ongoing-order-only is enabled: Order ID is required.';
+    } else if (requireExistingOrder && item.orderId && !knownOrderIds.has(String(item.orderId))) {
+      status = 'Invalid';
+      note = note || 'Order ID does not exist yet.';
     } else if (seen.has(key)) {
       status = 'Duplicate';
       note = note || 'Duplicate in this paste.';
@@ -2229,7 +2317,8 @@ function getBulkDefaults(){
     customer: (qs('#bulk-customer')?.value || '').trim(),
     note: (qs('#bulk-note')?.value || '').trim(),
     pricePerSpy: (qs('#bulk-price')?.value || '').trim(),
-    employeeRate: (qs('#bulk-rate')?.value || '').trim()
+    employeeRate: (qs('#bulk-rate')?.value || '').trim(),
+    requireExistingOrder: !!qs('#m-existing-order-only')?.checked
   };
 }
 
@@ -2391,11 +2480,12 @@ async function importTargets(){
   }
 
   let added = 0;
+  let batchResult = null;
   const failed = [];
   setImportProgress(0, unique.length, 'Sending batch to Google Sheet...');
   try{
-    const result = await call('', 'POST', { action:'bulkAdd', targets:unique, employee:state.me.trim() });
-    added = Number(result.added || unique.length);
+    batchResult = await call('', 'POST', { action:'bulkAdd', targets:unique, employee:state.me.trim(), requireExistingOrder: !!qs('#m-existing-order-only')?.checked });
+    added = Number(batchResult.added || unique.length);
     unique.forEach(item => addAuditLog('target_added', item.targetId, item.targetName));
     setImportProgress(added, unique.length, 'Batch import complete.');
   }catch(batchError){
@@ -2407,7 +2497,7 @@ async function importTargets(){
   }
   for (const item of failed.length ? unique : []) {
     try{
-      await call('', 'POST', { action:'add', targetName:item.targetName, targetId:item.targetId, notes:item.notes, priority:item.priority, orderId:item.orderId, customer:item.customer, pricePerSpy:item.pricePerSpy, employeeRate:item.employeeRate });
+      await call('', 'POST', { action:'add', targetName:item.targetName, targetId:item.targetId, notes:item.notes, priority:item.priority, orderId:item.orderId, customer:item.customer, pricePerSpy:item.pricePerSpy, employeeRate:item.employeeRate, requireExistingOrder: !!qs('#m-existing-order-only')?.checked });
       addAuditLog('target_added', item.targetId, item.targetName);
       added += 1;
       setImportProgress(added, unique.length, 'Imported ' + item.targetName);
@@ -2422,6 +2512,7 @@ async function importTargets(){
   await refresh();
 
   const parts = ['Imported ' + added + ' target(s).'];
+  if (Array.isArray(batchResult?.orderIds) && batchResult.orderIds.length) parts.push('Order(s): ' + batchResult.orderIds.join(', ') + '.');
   if (failed.length) parts.push('Failed ' + failed.length + ' target(s): ' + failed[0]);
   setStatus(parts.join(' '));
   setImportSummary([
@@ -2445,22 +2536,33 @@ async function importTargets(){
 
 
 async function addTask(){
-  const name=(qs('#m-name').value||'').trim();
-  const tid=(qs('#m-id').value||'').trim();
+  const parsedInput = parseSingleTargetInput((qs('#m-name')?.value || '').trim());
+  const name=(parsedInput.targetName || '').trim();
+  const tid=((qs('#m-id')?.value || parsedInput.targetId || '')).trim();
   const notes=(qs('#m-notes').value||'').trim();
   const priority=normalizePriority(qs('#m-priority')?.value);
   const orderId=(qs('#m-order')?.value||'').trim();
+  const requireExistingOrder = !!qs('#m-existing-order-only')?.checked;
   const customer=(qs('#m-customer')?.value||'').trim();
   const pricePerSpy=(qs('#m-price')?.value||'').trim();
   const employeeRate=(qs('#m-rate')?.value||'').trim();
   if(!name){ alert('Please enter a target name'); return; }
+  if(requireExistingOrder && !orderId){
+    setStatus('Add blocked: pick an existing ongoing order ID.');
+    return;
+  }
+  if(requireExistingOrder && orderId && !getKnownOrderIds().includes(orderId)){
+    setStatus('Add blocked: order ' + orderId + ' does not exist yet.');
+    return;
+  }
   if(tid && state.tasks.some(t => String(t.targetId || '') === tid)){
     setStatus('Add blocked: target ID already exists on the board.');
     return;
   }
   try{
-    await call('', 'POST', {action:'add', targetName:name, targetId:tid, notes, priority, orderId, customer, pricePerSpy, employeeRate});
+    const result = await call('', 'POST', {action:'add', targetName:name, targetId:tid, notes, priority, orderId, customer, pricePerSpy, employeeRate, requireExistingOrder});
     addAuditLog('target_added', tid, name);
+    if (result && result.orderId) setStatus('Target added to order ' + result.orderId + '.');
     qs('#m-name').value=''; qs('#m-id').value=''; qs('#m-notes').value=''; await refresh();
   }catch(e){ setStatus('Add failed: '+String(e.message||e)); }
 }
@@ -2684,8 +2786,30 @@ async function openJobSpecial(target){
   const exportHistoryBtn=qs('#export-history'); if(exportHistoryBtn) exportHistoryBtn.addEventListener('click',exportHistory);
   const recordCustomerPaymentBtn=qs('#record-customer-payment'); if(recordCustomerPaymentBtn) recordCustomerPaymentBtn.addEventListener('click',recordCustomerPayment);
   const recordEmployeePayoutBtn=qs('#record-employee-payout'); if(recordEmployeePayoutBtn) recordEmployeePayoutBtn.addEventListener('click',recordEmployeePayout);
+  const ledgerSummary = qs('#ledger-summary');
+  if (ledgerSummary) {
+    ledgerSummary.addEventListener('click', (event) => {
+      const btn = event.target.closest('.ledger-suggest');
+      if (!btn) return;
+      const employee = btn.getAttribute('data-employee') || '';
+      const amount = btn.getAttribute('data-amount') || '';
+      if (qs('#ledger-employee')) qs('#ledger-employee').value = employee;
+      if (qs('#ledger-employee-amount')) qs('#ledger-employee-amount').value = amount;
+      if (qs('#ledger-employee-status')) qs('#ledger-employee-status').value = 'queued';
+      setStatus('Suggested full payout loaded for ' + employee + '.');
+    });
+  }
   const copyFormat=qs('#copy-format'); if(copyFormat) copyFormat.addEventListener('change',()=>{ state.filters.copyFormat=copyFormat.value; });
   const releaseAllStale=qs('#release-all-stale'); if(releaseAllStale) releaseAllStale.addEventListener('click',releaseAllStaleClaims);
+  const singleName = qs('#m-name');
+  if (singleName) {
+    singleName.addEventListener('blur', () => {
+      const parsed = parseSingleTargetInput(singleName.value || '');
+      if (parsed.targetName && parsed.targetName !== singleName.value.trim()) singleName.value = parsed.targetName;
+      const idInput = qs('#m-id');
+      if (idInput && !idInput.value.trim() && parsed.targetId) idInput.value = parsed.targetId;
+    });
+  }
 
   const pasteEl = document.getElementById('paste');
   const previewEl = document.getElementById('preview');
