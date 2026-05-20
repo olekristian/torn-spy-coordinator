@@ -90,6 +90,10 @@ button:hover { border-color: #3a5499; }
 .status-submitted { color: #111; background: var(--good); }
 .status-stale { color: #fff; background: var(--danger); border-color: #f87171; }
 .status-warning { color: #111; background: var(--warn); border-color: #fde68a; }
+.status-assigned { color:#dbeafe; background:#1d4ed8; border-color:#60a5fa; }
+.status-pending_review { color:#111; background:#facc15; border-color:#fde68a; }
+.status-approved { color:#111; background:#22c55e; border-color:#86efac; }
+.status-rejected { color:#fff; background:#991b1b; border-color:#f87171; }
 .priority-rush { color:#fff; background:#b91c1c; border-color:#f87171; }
 .priority-high { color:#111; background:#fb923c; border-color:#fdba74; }
 .priority-normal { color:#dbeafe; background:#1e3a8a; border-color:#3b82f6; }
@@ -102,6 +106,7 @@ button:hover { border-color: #3a5499; }
 .preview-grid label { display:grid; gap:4px; color: var(--muted); font-size:12px; }
 .preview-grid input { width:100%; }
 .warning-box { border:1px solid var(--warn); background:rgba(251,191,36,.12); color:#fde68a; border-radius:10px; padding:8px; margin-top:8px; }
+.danger-box { border:1px solid var(--danger); background:rgba(239,68,68,.12); color:#fecaca; border-radius:10px; padding:8px; margin-top:8px; }
 .table-wrap { overflow-x:auto; }
 table { width:100%; border-collapse:collapse; }
 th, td { border-bottom:1px solid #22314f; padding:8px; text-align:left; vertical-align:top; }
@@ -170,6 +175,7 @@ th { color:var(--muted); font-size:12px; }
           <select id="status-filter">
             <option value="all">All</option>
             <option value="open">Open</option>
+            <option value="assigned">Assigned</option>
             <option value="claimed">Claimed</option>
             <option value="stale">Stale</option>
             <option value="submitted">Submitted</option>
@@ -196,6 +202,17 @@ th { color:var(--muted); font-size:12px; }
                 <option value="24h">Last 24h</option>
                 <option value="all">All</option>
               </select>
+              <select id="review-filter">
+                <option value="approved">Approved</option>
+                <option value="pending_review">Pending</option>
+                <option value="rejected">Rejected</option>
+                <option value="all">All review states</option>
+              </select>
+              <select id="copy-scope">
+                <option value="approved">Copy approved only</option>
+                <option value="pending_review">Copy pending</option>
+                <option value="visible">Copy all visible</option>
+              </select>
               <select id="copy-format">
                 <option value="compact">Compact</option>
                 <option value="discord">Discord</option>
@@ -206,6 +223,33 @@ th { color:var(--muted); font-size:12px; }
               <button id="copy-matching">Copy matching</button>
             </div>
             <div id="recent" class="grid cards"></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:12px" id="review-card">
+          <div class="hd">Manager Review Queue</div>
+          <div class="bd">
+            <div class="row" style="margin-bottom:10px">
+              <button id="release-all-stale">Release all stale claims</button>
+              <span class="muted">Review data and manager edits are stored locally in this browser.</span>
+            </div>
+            <div id="review-queue" class="grid"></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:12px" id="audit-card">
+          <div class="hd">Audit Log</div>
+          <div class="bd">
+            <div class="filters">
+              <select id="audit-filter">
+                <option value="all">All</option>
+                <option value="claims">Claims</option>
+                <option value="submissions">Submissions</option>
+                <option value="manager">Manager actions</option>
+                <option value="warnings">Errors/warnings</option>
+              </select>
+            </div>
+            <div id="audit-log" class="table-wrap"></div>
           </div>
         </div>
       </div>
@@ -257,6 +301,8 @@ const DEFAULT_KEY = "";
 const STALE_WARNING_MINUTES = 30;
 const STALE_DANGER_MINUTES = 60;
 const AUDIT_KEY = "torn_spy_audit_log";
+const REVIEW_KEY = "torn_spy_review_overrides";
+const ASSIGNMENT_KEY = "torn_spy_assignments";
 // ===== Helpers =====
 function qs(sel){ return document.querySelector(sel); }
 function setStatus(msg){ const e=qs('#err'); if(e) e.textContent = msg || ''; }
@@ -270,10 +316,12 @@ const state={
   key: DEFAULT_KEY, 
   admin:"",
   busyTaskIds: new Set(),
-  filters: { search:"", status:"all", priority:"all", recent:"today", copyFormat:"compact" },
+  filters: { search:"", status:"all", priority:"all", recent:"today", review:"approved", copyFormat:"compact", audit:"all" },
   lastUpdated: "",
   importPreview: [],
-  auditLog: []
+  auditLog: [],
+  reviews: {},
+  assignments: {}
 };
 
 function setTaskBusy(id, busy){
@@ -409,6 +457,8 @@ function loadSettings(){
   state.key = localStorage.getItem('torn_api_key') || DEFAULT_KEY;
   state.admin = localStorage.getItem('torn_admin_key') || '';
   try{ state.auditLog = JSON.parse(localStorage.getItem(AUDIT_KEY) || '[]'); }catch(_){ state.auditLog = []; }
+  try{ state.reviews = JSON.parse(localStorage.getItem(REVIEW_KEY) || '{}'); }catch(_){ state.reviews = {}; }
+  try{ state.assignments = JSON.parse(localStorage.getItem(ASSIGNMENT_KEY) || '{}'); }catch(_){ state.assignments = {}; }
   if (qs('#api-key')) qs('#api-key').value = state.key;
   if (qs('#adm')) qs('#adm').value = state.admin;
   const meI=qs('#me');
@@ -717,6 +767,8 @@ function isAdmin(){
 function enforceVisibility(){
   const isAdminUI = !!state.admin; // show admin UI only if admin key present locally
   const rc = document.getElementById('recent-card'); if(rc) rc.style.display = isAdminUI ? '' : 'none';
+  const reviewCard = document.getElementById('review-card'); if(reviewCard) reviewCard.style.display = isAdminUI ? '' : 'none';
+  const auditCard = document.getElementById('audit-card'); if(auditCard) auditCard.style.display = isAdminUI ? '' : 'none';
   const manageBtn = document.getElementById('tab-manage-btn'); if(manageBtn) manageBtn.style.display = isAdminUI ? '' : 'none';
   const tabManage = document.getElementById('tab-manage'); if(tabManage) tabManage.hidden = !isAdminUI;
 
@@ -733,6 +785,8 @@ function render(){
   renderDashboard();
   renderTargets();
   renderRecentlySubmitted();
+  renderReviewQueue();
+  renderAuditLog();
   renderImportPreview();
 }
 
@@ -774,6 +828,7 @@ function renderTargetCard(t){
   const status = getTargetStatus(t);
   const priority = normalizePriority(t.priority);
   const claimedAt = getClaimedAt(t);
+  const assignment = getAssignment(t);
   const card = document.createElement('div');
   card.className = 'card target-card' + (status === 'stale' ? ' stale' : isClaimWarning(t) ? ' warning' : '');
   const bd = document.createElement('div');
@@ -790,6 +845,7 @@ function renderTargetCard(t){
     <div class="chip-row">
       <span class="pill status-${status}">${status.toUpperCase()}</span>
       ${isClaimWarning(t) ? '<span class="pill status-warning">WARNING</span>' : ''}
+      ${assignment ? '<span class="pill status-assigned">Assigned to: ' + escapeHtml(assignment.assignedTo) + '</span>' : ''}
       ${t.claimedBy ? '<span class="pill">Claimed by: ' + escapeHtml(t.claimedBy) + '</span>' : ''}
       ${t.claimedBy ? '<span class="pill">Age: ' + escapeHtml(formatAge(claimedAt)) + '</span>' : ''}
     </div>
@@ -799,8 +855,16 @@ function renderTargetCard(t){
   row.className = 'row';
   row.style.marginTop = '10px';
   bd.appendChild(row);
-  if (status === 'open') addButton(row, isTaskBusy(t.id) ? 'Claiming...' : 'Claim', () => claim(t.id), isTaskBusy(t.id));
+  if (status === 'open' || (status === 'assigned' && normalizeEmployeeName(assignment.assignedTo) === normalizeEmployeeName(state.me))) addButton(row, isTaskBusy(t.id) ? 'Claiming...' : 'Claim', () => claim(t.id), isTaskBusy(t.id));
   addButton(row, 'Copy', () => copyTarget(t));
+  if (state.admin) {
+    const assignInput = document.createElement('input');
+    assignInput.placeholder = 'Assign to display name';
+    assignInput.value = assignment ? assignment.assignedTo : '';
+    assignInput.style.minWidth = '180px';
+    row.appendChild(assignInput);
+    addButton(row, 'Assign', () => assignTarget(t.id, assignInput.value));
+  }
   if (t.status === 'claimed' && (normalizeEmployeeName(t.claimedBy) === normalizeEmployeeName(state.me) || status === 'stale')) {
     addButton(row, status === 'stale' ? 'Release stale' : 'Release', () => unclaim(t.id), isTaskBusy(t.id));
   }
@@ -851,6 +915,11 @@ function renderRecentlySubmitted(){
     title.style.fontWeight = '600';
     title.textContent = (t.targetName || 'Unknown') + (t.targetId ? ' [' + t.targetId + ']' : '');
     bd.appendChild(title);
+    const review = getReview(t);
+    const reviewPill = document.createElement('div');
+    reviewPill.className = 'chip-row';
+    reviewPill.innerHTML = `<span class="pill status-${review.status}">${escapeHtml(review.status.toUpperCase())}</span>`;
+    bd.appendChild(reviewPill);
     const by = document.createElement('div');
     by.className = 'muted';
     by.textContent = 'by ' + (t.claimedBy || '-') + ' | ' + formatAge(getSubmittedAt(t));
@@ -862,6 +931,69 @@ function renderRecentlySubmitted(){
     bd.appendChild(pre);
     recentEl.appendChild(card);
   });
+}
+
+function renderReviewQueue(){
+  const el = qs('#review-queue');
+  if (!el) return;
+  const submitted = state.tasks.filter(t => t.status === 'submitted' && getReview(t).status === 'pending_review');
+  el.innerHTML = submitted.length ? '' : '<div class="muted">No submissions pending review.</div>';
+  submitted.forEach(t => el.appendChild(renderReviewCard(t)));
+}
+
+function renderReviewCard(t){
+  const review = getReview(t);
+  const payload = getReviewPayload(t);
+  const card = document.createElement('div');
+  card.className = 'card';
+  const bd = document.createElement('div');
+  bd.className = 'bd';
+  card.appendChild(bd);
+  bd.innerHTML = `
+    <div class="target-title">
+      <div>
+        <div style="font-weight:700">${escapeHtml(t.targetName || payload.name || 'Unknown')}</div>
+        <div class="muted">${escapeHtml(t.targetId || payload.targetId || '')}</div>
+      </div>
+      <span class="pill status-${review.status}">${escapeHtml(review.status.toUpperCase())}</span>
+    </div>
+    <div class="chip-row">
+      <span class="pill">Submitted by: ${escapeHtml(t.claimedBy || review.submittedBy || '-')}</span>
+      <span class="pill">Submitted: ${escapeHtml(formatAge(getSubmittedAt(t)))}</span>
+    </div>
+    ${review.warnings && review.warnings.length ? '<div class="warning-box">' + review.warnings.map(escapeHtml).join('<br>') + '</div>' : ''}
+    <div class="preview-grid">
+      <label>Name<input id="review-name-${t.id}" value="${escapeHtml(payload.name || t.targetName || '')}"></label>
+      <label>ID<input id="review-id-${t.id}" value="${escapeHtml(payload.targetId || t.targetId || '')}"></label>
+      <label>Level<input id="review-level-${t.id}" value="${escapeHtml(payload.level ?? '')}"></label>
+      <label>Strength<input id="review-strength-${t.id}" value="${escapeHtml(payload.strength ?? '')}"></label>
+      <label>Defense<input id="review-defense-${t.id}" value="${escapeHtml(payload.defense ?? '')}"></label>
+      <label>Speed<input id="review-speed-${t.id}" value="${escapeHtml(payload.speed ?? '')}"></label>
+      <label>Dexterity<input id="review-dexterity-${t.id}" value="${escapeHtml(payload.dexterity ?? '')}"></label>
+      <label>Total<input id="review-total-${t.id}" value="${escapeHtml(payload.total ?? '')}"></label>
+    </div>
+    <div class="mono" style="margin-top:10px">${escapeHtml(review.rawText || t.rawText || '')}</div>
+  `;
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.style.marginTop = '10px';
+  bd.appendChild(row);
+  addButton(row, 'Approve', () => approveSubmission(t.id));
+  addButton(row, 'Edit', () => saveReviewEdit(t.id));
+  addButton(row, 'Reject', () => rejectSubmission(t.id));
+  addButton(row, 'Copy', () => copyReviewResult(t.id));
+  return card;
+}
+
+function renderAuditLog(){
+  const el = qs('#audit-log');
+  if (!el) return;
+  const rows = getFilteredAuditLog().slice(0, 80);
+  if (!rows.length) {
+    el.innerHTML = '<div class="muted">No audit entries yet.</div>';
+    return;
+  }
+  el.innerHTML = `<table><thead><tr><th>Timestamp</th><th>Actor</th><th>Action</th><th>Target ID</th><th>Details</th></tr></thead><tbody>${rows.map(entry => `<tr><td>${escapeHtml(new Date(entry.timestamp).toLocaleString())}</td><td>${escapeHtml(entry.actor)}</td><td>${escapeHtml(entry.action)}</td><td>${escapeHtml(entry.targetId)}</td><td>${escapeHtml(entry.details)}</td></tr>`).join('')}</tbody></table>`;
 }
 
 // ===== Actions =====
@@ -879,6 +1011,8 @@ async function claim(id){
   setStatus('Claiming target...');
   try{
     await call('', 'POST', {action:'claim', id, employee: state.me.trim()});
+    delete state.assignments[taskKey(task)];
+    saveAssignments();
     addAuditLog('target_claimed', task && task.targetId, task && task.targetName);
     setStatus('Claim registered.');
     setTaskBusy(id, false);
@@ -943,20 +1077,21 @@ async function submitSpy(id){
     if(!p.id   && task.targetId)   p.id   = task.targetId;
     const corrected = readCorrectedSpy(id, parseSpyResult(raw));
     p = completeStats(Object.assign({}, p, corrected));
+    const submitWarnings = [];
     if (task.targetId && p.id && String(task.targetId) !== String(p.id)) {
-      throw new Error('Parsed target ID ' + p.id + ' does not match claimed task ID ' + task.targetId + '.');
+      submitWarnings.push('Parsed target ID ' + p.id + ' does not match claimed task ID ' + task.targetId + '.');
     }
     if (!task.targetId && task.targetName && p.name && normalizeTargetName(task.targetName) !== normalizeTargetName(p.name)) {
-      throw new Error('Parsed target name ' + p.name + ' does not match claimed task ' + task.targetName + '.');
+      submitWarnings.push('Parsed target name ' + p.name + ' does not match claimed task ' + task.targetName + '.');
     }
 
     // Re-kalkuler streng total (i tilfelle)
     const has4 = [p.strength,p.speed,p.dexterity,p.defense].every(v=>v!=null);
     p.total = has4 ? (p.strength + p.speed + p.dexterity + p.defense) : null;
     const missing = getMissingStats(p);
-    if (missing.length) {
+    if (missing.length || submitWarnings.length) {
       const shouldContinue = window.confirm(
-        'This is a partial spy. Missing: ' + missing.join(', ') + '. Submit anyway?'
+        submitWarnings.concat(missing.length ? ['This is a partial spy. Missing: ' + missing.join(', ') + '.'] : []).join('\n') + '\nSubmit anyway?'
       );
       if (!shouldContinue) {
         setTaskBusy(id, false);
@@ -977,6 +1112,7 @@ async function submitSpy(id){
       dexterity: p.dexterity,
       defense: p.defense,
       total: p.total,
+      rawText: raw,
       formatted: formatBlock(p)
     };
 
@@ -986,6 +1122,16 @@ async function submitSpy(id){
     });
 
     ta.value='';
+    state.reviews[taskKey(task)] = {
+      status: 'pending_review',
+      rawText: raw,
+      submittedBy: state.me.trim(),
+      submittedAt: new Date().toISOString(),
+      warnings: submitWarnings.concat(buildSubmissionWarnings(task, payload)),
+      editedPayload: null
+    };
+    saveReviews();
+    if (submitWarnings.length || missing.length) addAuditLog('submission_warning', payload.targetId, submitWarnings.concat(missing.length ? ['Missing: ' + missing.join(', ')] : []).join(' | '));
     addAuditLog('spy_submitted', payload.targetId, payload.name);
     setStatus('Result submitted.');
     setTaskBusy(id, false);
@@ -997,6 +1143,7 @@ async function submitSpy(id){
     updateSpyPreview(id);
     const err = document.getElementById('err');
     if (err) err.textContent = 'Submit failed: ' + (e.message||e);
+    addAuditLog('submission_error', '', e.message || String(e));
   }
 }
 
@@ -1107,6 +1254,7 @@ function isClaimWarning(target){
 
 function getTargetStatus(target){
   if (target.status === 'submitted') return 'submitted';
+  if (getAssignment(target)) return 'assigned';
   if (isClaimStale(target)) return 'stale';
   if (target.status === 'claimed') return 'claimed';
   return 'open';
@@ -1128,6 +1276,157 @@ function addAuditLog(action, targetId, details){
   state.auditLog.unshift(entry);
   state.auditLog = state.auditLog.slice(0, 300);
   localStorage.setItem(AUDIT_KEY, JSON.stringify(state.auditLog));
+}
+
+function taskKey(target){
+  return String((target && target.id) || (target && target.targetId) || '');
+}
+
+function saveReviews(){
+  localStorage.setItem(REVIEW_KEY, JSON.stringify(state.reviews));
+}
+
+function saveAssignments(){
+  localStorage.setItem(ASSIGNMENT_KEY, JSON.stringify(state.assignments));
+}
+
+function getReview(target){
+  const key = taskKey(target);
+  if (!state.reviews[key]) {
+    const payload = target.payload || {};
+    state.reviews[key] = {
+      status: target.reviewStatus || target.approvalStatus || 'pending_review',
+      rawText: target.rawText || payload.rawText || '',
+      submittedBy: target.claimedBy || '',
+      warnings: buildSubmissionWarnings(target, payload),
+      editedPayload: null
+    };
+  }
+  return state.reviews[key];
+}
+
+function getReviewPayload(target){
+  const review = getReview(target);
+  return Object.assign({}, target.payload || {}, review.editedPayload || {});
+}
+
+function buildSubmissionWarnings(target, payload){
+  const warnings = [];
+  const p = payload || {};
+  const stats = [p.strength,p.speed,p.dexterity,p.defense];
+  const missing = ['Strength','Speed','Dexterity','Defense'].filter((_, i) => stats[i] == null);
+  if (missing.length) warnings.push('Missing stats: ' + missing.join(', ') + '.');
+  if (stats.every(v => v != null)) {
+    const sum = Number(p.strength) + Number(p.speed) + Number(p.dexterity) + Number(p.defense);
+    if (p.total != null && Number(p.total) !== sum) warnings.push('Total does not match stat sum.');
+  }
+  if (target.targetId && p.targetId && String(target.targetId) !== String(p.targetId)) warnings.push('Pasted target ID does not match card target ID.');
+  const alreadyApproved = state.tasks.some(other => other !== target && other.status === 'submitted' && String(other.targetId || '') === String(target.targetId || '') && state.reviews[taskKey(other)]?.status === 'approved');
+  if (alreadyApproved) warnings.push('This target already has an approved result.');
+  if (p.level == null || p.level === '') warnings.push('Level is missing.');
+  return warnings;
+}
+
+function readReviewPayload(id){
+  const get = key => document.getElementById('review-' + key + '-' + id);
+  const p = {
+    name: (get('name')?.value || '').trim(),
+    targetId: (get('id')?.value || '').trim(),
+    level: parseNumberToken(get('level')?.value),
+    strength: parseNumberToken(get('strength')?.value),
+    defense: parseNumberToken(get('defense')?.value),
+    speed: parseNumberToken(get('speed')?.value),
+    dexterity: parseNumberToken(get('dexterity')?.value),
+    total: parseNumberToken(get('total')?.value)
+  };
+  completeStats(p);
+  p.formatted = formatBlock(p);
+  return p;
+}
+
+function saveReviewEdit(id){
+  const task = state.tasks.find(t => String(t.id) === String(id));
+  if (!task) return;
+  const review = getReview(task);
+  review.editedPayload = readReviewPayload(id);
+  review.warnings = buildSubmissionWarnings(task, review.editedPayload);
+  saveReviews();
+  addAuditLog('manager_edit_submission', review.editedPayload.targetId || task.targetId, review.editedPayload.name || task.targetName);
+  setStatus('Review edit saved locally.');
+  render();
+}
+
+function approveSubmission(id){
+  const task = state.tasks.find(t => String(t.id) === String(id));
+  if (!task) return;
+  saveReviewEdit(id);
+  const review = getReview(task);
+  review.status = 'approved';
+  review.reviewedAt = new Date().toISOString();
+  review.reviewedBy = state.me || 'manager';
+  saveReviews();
+  addAuditLog('manager_approved_submission', task.targetId, task.targetName);
+  setStatus('Submission approved.');
+  render();
+}
+
+function rejectSubmission(id){
+  const task = state.tasks.find(t => String(t.id) === String(id));
+  if (!task) return;
+  const reason = window.prompt('Reject reason (optional):', '') || '';
+  const review = getReview(task);
+  review.status = 'rejected';
+  review.rejectedAt = new Date().toISOString();
+  review.reviewedBy = state.me || 'manager';
+  review.rejectReason = reason;
+  saveReviews();
+  addAuditLog('manager_rejected_submission', task.targetId, reason || task.targetName);
+  setStatus('Submission rejected.');
+  render();
+}
+
+async function copyReviewResult(id){
+  const task = state.tasks.find(t => String(t.id) === String(id));
+  if (!task) return;
+  await navigator.clipboard.writeText(formatSubmittedTasks([task], state.filters.copyFormat));
+  setStatus('Review result copied.');
+}
+
+function getAssignment(target){
+  return state.assignments[taskKey(target)] || null;
+}
+
+function assignTarget(id, displayName){
+  const task = state.tasks.find(t => String(t.id) === String(id));
+  const name = String(displayName || '').trim();
+  if (!task || !name) return;
+  state.assignments[taskKey(task)] = { assignedTo: name, assignedAt: new Date().toISOString(), assignedBy: state.me || 'manager' };
+  saveAssignments();
+  addAuditLog('manager_assigned_target', task.targetId, name);
+  setStatus('Target assigned.');
+  render();
+}
+
+async function releaseAllStaleClaims(){
+  const stale = state.tasks.filter(isClaimStale);
+  if (!stale.length) { setStatus('No stale claims to release.'); return; }
+  if (!window.confirm('Release ' + stale.length + ' stale claim(s)?')) return;
+  for (const task of stale) {
+    await unclaim(task.id);
+    addAuditLog('manager_release_stale', task.targetId, task.targetName);
+  }
+  setStatus('Released stale claims.');
+}
+
+function getFilteredAuditLog(){
+  const filter = state.filters.audit;
+  return state.auditLog.filter(entry => {
+    if (filter === 'claims') return /claim|release/.test(entry.action);
+    if (filter === 'submissions') return /submit|submission|approved|rejected/.test(entry.action);
+    if (filter === 'manager') return /^manager_/.test(entry.action);
+    if (filter === 'warnings') return /warning|error|failed|rejected/.test(entry.action);
+    return true;
+  });
 }
 
 function setImportSummary(lines){
@@ -1210,12 +1509,16 @@ function updateSpyPreview(id){
     el.innerHTML = '';
     return;
   }
-  const warnings = parsed.warnings.length ? `<div class="warning-box">${parsed.warnings.map(escapeHtml).join('<br>')}</div>` : '<div class="muted" style="margin-top:8px">Spy parser looks good.</div>';
+  const task = state.tasks.find(t => String(t.id) === String(id)) || {};
+  if (task.targetId && parsed.targetId && String(task.targetId) !== String(parsed.targetId)) parsed.warnings.push('Pasted target ID does not match this card.');
+  if (task.targetId && state.tasks.some(t => t !== task && t.status === 'submitted' && String(t.targetId || '') === String(task.targetId) && state.reviews[taskKey(t)]?.status === 'approved')) parsed.warnings.push('This target already has an approved result.');
+  const warningHtml = parsed.warnings.length ? `<div class="warning-box">${parsed.warnings.map(escapeHtml).join('<br>')}</div>` : '<div class="muted" style="margin-top:8px">Spy parser looks good.</div>';
   el.innerHTML = `
-    ${warnings}
+    ${warningHtml}
     <div class="preview-grid">
       <label>Name<input id="spy-name-${id}" value="${escapeHtml(parsed.targetName)}"></label>
       <label>ID<input id="spy-id-${id}" value="${escapeHtml(parsed.targetId)}"></label>
+      <label>Level<input id="spy-level-${id}" value="${escapeHtml(parsed.level ?? '')}"></label>
       <label>Strength<input id="spy-strength-${id}" value="${escapeHtml(parsed.strength ?? '')}"></label>
       <label>Defense<input id="spy-defense-${id}" value="${escapeHtml(parsed.defense ?? '')}"></label>
       <label>Speed<input id="spy-speed-${id}" value="${escapeHtml(parsed.speed ?? '')}"></label>
@@ -1229,6 +1532,7 @@ function readCorrectedSpy(id, fallback){
   return {
     name: (get('name')?.value || fallback.targetName || '').trim(),
     id: (get('id')?.value || fallback.targetId || '').trim(),
+    level: parseNumberToken(get('level')?.value) ?? fallback.level ?? null,
     strength: parseNumberToken(get('strength')?.value),
     defense: parseNumberToken(get('defense')?.value),
     speed: parseNumberToken(get('speed')?.value),
@@ -1385,6 +1689,13 @@ function formatSubmittedList(tasks){
 }
 
 function getVisibleSubmitted(){
+  return getSubmittedByDate().filter(t => {
+    const reviewStatus = getReview(t).status;
+    return state.filters.review === 'all' || reviewStatus === state.filters.review;
+  });
+}
+
+function getSubmittedByDate(){
   const now = Date.now();
   const today = new Date(); today.setHours(0,0,0,0);
   return state.tasks.filter(t => {
@@ -1397,8 +1708,15 @@ function getVisibleSubmitted(){
 }
 
 function copySubmittedResults(format){
-  const tasks = getVisibleSubmitted();
+  const tasks = getCopyScopedSubmitted();
   return formatSubmittedTasks(tasks, format);
+}
+
+function getCopyScopedSubmitted(){
+  const scope = qs('#copy-scope')?.value || 'approved';
+  const visible = scope === 'visible' ? getVisibleSubmitted() : getSubmittedByDate();
+  if (scope === 'visible') return visible;
+  return visible.filter(t => getReview(t).status === scope);
 }
 
 function submittedSearchText(target){
@@ -1448,7 +1766,10 @@ async function copyTarget(target){
   const statusFilter=qs('#status-filter'); if(statusFilter) statusFilter.addEventListener('change',()=>{ state.filters.status=statusFilter.value; renderTargets(); });
   const priorityFilter=qs('#priority-filter'); if(priorityFilter) priorityFilter.addEventListener('change',()=>{ state.filters.priority=priorityFilter.value; renderTargets(); });
   const recentFilter=qs('#recent-filter'); if(recentFilter) recentFilter.addEventListener('change',()=>{ state.filters.recent=recentFilter.value; renderRecentlySubmitted(); });
+  const reviewFilter=qs('#review-filter'); if(reviewFilter) reviewFilter.addEventListener('change',()=>{ state.filters.review=reviewFilter.value; renderRecentlySubmitted(); });
+  const auditFilter=qs('#audit-filter'); if(auditFilter) auditFilter.addEventListener('change',()=>{ state.filters.audit=auditFilter.value; renderAuditLog(); });
   const copyFormat=qs('#copy-format'); if(copyFormat) copyFormat.addEventListener('change',()=>{ state.filters.copyFormat=copyFormat.value; });
+  const releaseAllStale=qs('#release-all-stale'); if(releaseAllStale) releaseAllStale.addEventListener('click',releaseAllStaleClaims);
 
   const pasteEl = document.getElementById('paste');
   const previewEl = document.getElementById('preview');
