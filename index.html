@@ -190,6 +190,9 @@ th { color:var(--muted); font-size:12px; }
 .primary-action { min-height:44px; padding:10px 16px; }
 .quiet { background:var(--surface); color:var(--text); border-color:var(--line); }
 .success-note { color:var(--good); font-size:13px; margin-top:10px; min-height:18px; }
+.app-footer { margin:24px 0 8px; color:var(--muted); font-size:12px; text-align:center; }
+.app-footer a { color:var(--text-2); text-decoration:none; border-bottom:1px solid var(--line); }
+.app-footer a:hover { color:var(--text); border-color:var(--text); }
 body:not(.is-admin) .manager-only { display:none !important; }
 .is-admin .filters.manager-only { display:flex; }
 @media (max-width: 760px) {
@@ -224,7 +227,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
       <button class="tab" data-tab="tutorial">Tutorial</button>
       <button class="tab active" data-tab="board">Claim Board</button>
       <!--<button class="tab" data-tab="submit">Submit</button>-->
-      <button id="tab-manage-btn" class="tab" data-tab="manage">Manager</button>
+      <button id="tab-manage-btn" class="tab manager-only" data-tab="manage">Manager</button>
 
     </div>
     </div>
@@ -266,115 +269,6 @@ body:not(.is-admin) .manager-only { display:none !important; }
         <div id="tasks" class="grid cards"></div>
       </div></div>
 
-        <div class="card" style="margin-top:12px" id="recent-card">
-          <div class="hd">
-            Recently Submitted
-          </div>
-          <div class="bd">
-            <div class="filters">
-              <select id="recent-filter">
-                <option value="today">Today</option>
-                <option value="24h">Last 24h</option>
-                <option value="all">All</option>
-              </select>
-              <select id="review-filter">
-                <option value="approved">Approved</option>
-                <option value="pending_review">Pending</option>
-                <option value="rejected">Rejected</option>
-                <option value="all">All review states</option>
-              </select>
-              <select id="copy-scope">
-                <option value="approved">Copy approved only</option>
-                <option value="pending_review">Copy pending</option>
-                <option value="visible">Copy all visible</option>
-              </select>
-              <select id="copy-format">
-                <option value="compact">Compact</option>
-                <option value="discord">Discord</option>
-                <option value="plain">Plain text</option>
-              </select>
-              <button id="copy-all">Copy all visible</button>
-              <input id="copy-match" placeholder='Copy containing e.g. "Scallywags"'>
-              <button id="copy-matching">Copy matching</button>
-            </div>
-            <div id="recent" class="grid cards"></div>
-          </div>
-        </div>
-
-        <div class="card" style="margin-top:12px" id="review-card">
-          <div class="hd">Manager Review Queue</div>
-          <div class="bd">
-            <div class="row" style="margin-bottom:10px">
-              <button id="release-all-stale">Release all stale claims</button>
-              <span class="muted">Review data and manager edits are stored locally in this browser.</span>
-            </div>
-            <div id="review-queue" class="grid"></div>
-          </div>
-        </div>
-
-        <div class="card" style="margin-top:12px" id="audit-card">
-          <div class="hd">Audit Log</div>
-          <div class="bd">
-            <div class="filters">
-              <select id="audit-filter">
-                <option value="all">All</option>
-                <option value="claims">Claims</option>
-                <option value="submissions">Submissions</option>
-                <option value="manager">Manager actions</option>
-                <option value="warnings">Errors/warnings</option>
-              </select>
-            </div>
-            <div id="audit-log" class="table-wrap"></div>
-          </div>
-        </div>
-
-        <div class="card" style="margin-top:12px" id="history-card">
-          <div class="hd">Delivery History</div>
-          <div class="bd">
-            <div class="filters">
-              <input id="history-search" placeholder="Search customer, order, target, spy, delivered by">
-              <input id="history-customer" placeholder="Customer / requester">
-              <input id="history-order" placeholder="Order / case">
-              <button id="archive-visible">Archive visible approved</button>
-              <button id="copy-history">Copy history</button>
-              <button id="export-history">Export JSON</button>
-            </div>
-            <div class="muted" style="margin-bottom:10px">Use this as your local history of who ordered what, when, what was delivered, and by whom.</div>
-            <div id="history-list" class="table-wrap"></div>
-          </div>
-        </div>
-
-        <div class="card" style="margin-top:12px" id="ledger-card">
-          <div class="hd">Payments & Payout Ledger</div>
-          <div class="bd">
-            <div class="filters">
-              <input id="ledger-order" placeholder="Order ID">
-              <input id="ledger-customer" placeholder="Customer">
-              <input id="ledger-customer-amount" type="number" min="0" step="1" placeholder="Customer paid amount">
-              <select id="ledger-customer-status">
-                <option value="unpaid">Customer unpaid</option>
-                <option value="partial">Customer partial</option>
-                <option value="paid">Customer paid</option>
-              </select>
-              <input id="ledger-payment-ref" placeholder="Payment reference / note">
-              <button id="record-customer-payment">Record customer payment</button>
-            </div>
-            <div class="filters">
-              <input id="ledger-employee" placeholder="Employee display name">
-              <input id="ledger-target-id" placeholder="Target ID">
-              <input id="ledger-employee-amount" type="number" min="0" step="1" placeholder="Employee payout amount">
-              <select id="ledger-employee-status">
-                <option value="unpaid">Employee unpaid</option>
-                <option value="queued">Employee queued</option>
-                <option value="paid">Employee paid</option>
-              </select>
-              <input id="ledger-payout-ref" placeholder="Payout reference / note">
-              <button id="record-employee-payout">Record employee payout</button>
-            </div>
-            <div id="ledger-summary" class="table-wrap"></div>
-          </div>
-        </div>
-      </div>
     </section>
 
     <section id="tab-submit" hidden>
@@ -387,7 +281,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
       </div></div>
     </section>
 
-    <section id="tab-manage" hidden>
+    <section id="tab-manage" class="manager-only" hidden>
       <div class="card"><div class="hd">Add Target</div><div class="bd grid">
         <div class="row">
           <input id="m-name" placeholder="Target name (e.g., tc103)" style="flex:1">
@@ -431,12 +325,132 @@ body:not(.is-admin) .manager-only { display:none !important; }
         </div>
         <div id="m-import-preview" class="table-wrap" hidden></div>
       </div></div>
+
+      <div class="card" style="margin-top:12px" id="completed-orders-card">
+        <div class="hd">Orders Ready / Completed Orders</div>
+        <div class="bd">
+          <div class="muted" style="margin-bottom:10px">Completed means every target in the order is submitted and approved.</div>
+          <div id="completed-orders" class="grid cards"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px" id="recent-card">
+        <div class="hd">
+          Recently Submitted
+        </div>
+        <div class="bd">
+          <div class="filters">
+            <select id="recent-filter">
+              <option value="today">Today</option>
+              <option value="24h">Last 24h</option>
+              <option value="all">All</option>
+            </select>
+            <select id="review-filter">
+              <option value="approved">Approved</option>
+              <option value="pending_review">Pending</option>
+              <option value="rejected">Rejected</option>
+              <option value="all">All review states</option>
+            </select>
+            <select id="copy-scope">
+              <option value="approved">Copy approved only</option>
+              <option value="pending_review">Copy pending</option>
+              <option value="visible">Copy all visible</option>
+            </select>
+            <select id="copy-format">
+              <option value="compact">Compact</option>
+              <option value="discord">Discord</option>
+              <option value="plain">Plain text</option>
+            </select>
+            <button id="copy-all">Copy all visible</button>
+            <input id="copy-match" placeholder='Copy containing e.g. "Scallywags"'>
+            <button id="copy-matching">Copy matching</button>
+          </div>
+          <div id="recent" class="grid cards"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px" id="review-card">
+        <div class="hd">Manager Review Queue</div>
+        <div class="bd">
+          <div class="row" style="margin-bottom:10px">
+            <button id="release-all-stale">Release all stale claims</button>
+            <span class="muted">Review data and manager edits are stored locally in this browser.</span>
+          </div>
+          <div id="review-queue" class="grid"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px" id="audit-card">
+        <div class="hd">Audit Log</div>
+        <div class="bd">
+          <div class="filters">
+            <select id="audit-filter">
+              <option value="all">All</option>
+              <option value="claims">Claims</option>
+              <option value="submissions">Submissions</option>
+              <option value="manager">Manager actions</option>
+              <option value="warnings">Errors/warnings</option>
+            </select>
+          </div>
+          <div id="audit-log" class="table-wrap"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px" id="history-card">
+        <div class="hd">Delivery History</div>
+        <div class="bd">
+          <div class="filters">
+            <input id="history-search" placeholder="Search customer, order, target, spy, delivered by">
+            <input id="history-customer" placeholder="Customer / requester">
+            <input id="history-order" placeholder="Order / case">
+            <button id="archive-visible">Archive visible approved</button>
+            <button id="copy-history">Copy history</button>
+            <button id="export-history">Export JSON</button>
+          </div>
+          <div class="muted" style="margin-bottom:10px">Use this as your local history of who ordered what, when, what was delivered, and by whom.</div>
+          <div id="history-list" class="table-wrap"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px" id="ledger-card">
+        <div class="hd">Payments & Payout Ledger</div>
+        <div class="bd">
+          <div class="filters">
+            <input id="ledger-order" placeholder="Order ID">
+            <input id="ledger-customer" placeholder="Customer">
+            <input id="ledger-customer-amount" type="number" min="0" step="1" placeholder="Customer paid amount">
+            <select id="ledger-customer-status">
+              <option value="unpaid">Customer unpaid</option>
+              <option value="partial">Customer partial</option>
+              <option value="paid">Customer paid</option>
+            </select>
+            <input id="ledger-payment-ref" placeholder="Payment reference / note">
+            <button id="record-customer-payment">Record customer payment</button>
+          </div>
+          <div class="filters">
+            <input id="ledger-employee" placeholder="Employee display name">
+            <input id="ledger-target-id" placeholder="Target ID">
+            <input id="ledger-employee-amount" type="number" min="0" step="1" placeholder="Employee payout amount">
+            <select id="ledger-employee-status">
+              <option value="unpaid">Employee unpaid</option>
+              <option value="queued">Employee queued</option>
+              <option value="paid">Employee paid</option>
+            </select>
+            <input id="ledger-payout-ref" placeholder="Payout reference / note">
+            <button id="record-employee-payout">Record employee payout</button>
+          </div>
+          <div id="ledger-summary" class="table-wrap"></div>
+        </div>
+      </div>
     </section>
 
+    <footer class="app-footer">
+      <a href="./index.html">Torn Spy Coordinator</a>
+    </footer>
   </div>
 
 <script>
-const DEFAULT_API = "https://script.google.com/macros/s/AKfycbyIWUWjx9PpX53FJpDOm0S1w5LlUK1avceZBGY20SFwEcVnSBgALcw3ELTuMN6F75bm/exec";
+const DEFAULT_API = "https://script.google.com/macros/s/AKfycbwH_aOfdMLzzlta4wUvOqxNU68YJsHTuZtblK61kUd_OQ0iNZB_hT5YEgGX3OsmqlLl/exec";
 const DEFAULT_KEY = "";
 const STALE_WARNING_MINUTES = 30;
 const STALE_DANGER_MINUTES = 60;
@@ -961,6 +975,7 @@ function isAdmin(){
 function enforceVisibility(){
   const isAdminUI = !!state.admin; // show admin UI only if admin key present locally
   document.body.classList.toggle('is-admin', isAdminUI);
+  const completedOrdersCard = document.getElementById('completed-orders-card'); if(completedOrdersCard) completedOrdersCard.style.display = isAdminUI ? '' : 'none';
   const rc = document.getElementById('recent-card'); if(rc) rc.style.display = isAdminUI ? '' : 'none';
   const reviewCard = document.getElementById('review-card'); if(reviewCard) reviewCard.style.display = isAdminUI ? '' : 'none';
   const auditCard = document.getElementById('audit-card'); if(auditCard) auditCard.style.display = isAdminUI ? '' : 'none';
@@ -986,6 +1001,7 @@ function render(){
   renderAuditLog();
   renderHistory();
   renderLedger();
+  renderCompletedOrders();
   renderImportPreview();
 }
 
@@ -1237,6 +1253,10 @@ function renderSubmitPanel(parent, t){
 function renderRecentlySubmitted(){
   const recentEl = qs('#recent');
   if (!recentEl) return;
+  if (!state.admin) {
+    recentEl.innerHTML = '';
+    return;
+  }
   recentEl.innerHTML = '';
   getVisibleSubmitted().slice(0, 24).forEach(t => {
     const card = document.createElement('div');
@@ -1276,6 +1296,10 @@ function renderRecentlySubmitted(){
 function renderReviewQueue(){
   const el = qs('#review-queue');
   if (!el) return;
+  if (!state.admin) {
+    el.innerHTML = '';
+    return;
+  }
   const submitted = state.tasks.filter(t => t.status === 'submitted' && getReview(t).status === 'pending_review');
   el.innerHTML = submitted.length ? '' : '<div class="muted">No submissions pending review.</div>';
   submitted.forEach(t => el.appendChild(renderReviewCard(t)));
@@ -1328,6 +1352,10 @@ function renderReviewCard(t){
 function renderAuditLog(){
   const el = qs('#audit-log');
   if (!el) return;
+  if (!state.admin) {
+    el.innerHTML = '';
+    return;
+  }
   const rows = getFilteredAuditLog().slice(0, 80);
   if (!rows.length) {
     el.innerHTML = '<div class="muted">No audit entries yet.</div>';
@@ -1339,6 +1367,10 @@ function renderAuditLog(){
 function renderHistory(){
   const el = qs('#history-list');
   if (!el) return;
+  if (!state.admin) {
+    el.innerHTML = '';
+    return;
+  }
   const rows = getFilteredHistory();
   if (!rows.length) {
     el.innerHTML = '<div class="muted">No archived deliveries yet.</div>';
@@ -1350,6 +1382,10 @@ function renderHistory(){
 function renderLedger(){
   const el = qs('#ledger-summary');
   if (!el) return;
+  if (!state.admin) {
+    el.innerHTML = '';
+    return;
+  }
   const submitted = state.tasks.filter(t => t.status === 'submitted');
   const customerDue = state.tasks.reduce((sum,t)=>sum + ((t.customerPaymentStatus || 'unpaid') === 'paid' ? 0 : Number(t.pricePerSpy || 0)), 0);
   const employeeDue = submitted.reduce((sum,t)=>sum + ((t.employeePayoutStatus || 'unpaid') === 'paid' ? 0 : Number(t.employeeRate || 0)), 0);
@@ -1363,6 +1399,57 @@ function renderLedger(){
     ['Estimated net after recorded payouts', collected - paidOut]
   ];
   el.innerHTML = `<table><thead><tr><th>Metric</th><th>Amount</th></tr></thead><tbody>${rows.map(([k,v])=>`<tr><td>${escapeHtml(k)}</td><td>${Number(v || 0).toLocaleString()}</td></tr>`).join('')}</tbody></table>`;
+}
+
+function renderCompletedOrders(){
+  const el = qs('#completed-orders');
+  if (!el) return;
+  if (!state.admin) {
+    el.innerHTML = '';
+    return;
+  }
+  const orderIds = getKnownOrderIds();
+  if (!orderIds.length) {
+    el.innerHTML = '<div class="muted">No orders found yet. Add targets with an Order ID to track completion.</div>';
+    return;
+  }
+  el.innerHTML = '';
+  orderIds
+    .map(getOrderCompletion)
+    .sort((a,b) => Number(b.complete) - Number(a.complete) || String(a.orderId).localeCompare(String(b.orderId)))
+    .forEach(order => {
+      const card = document.createElement('div');
+      card.className = 'card';
+      const bd = document.createElement('div');
+      bd.className = 'bd';
+      card.appendChild(bd);
+      const notifyStatus = order.order.completionNotificationStatus || 'not sent';
+      const newOrderStatus = order.order.newOrderNotificationStatus || 'not sent';
+      bd.innerHTML = `
+        <div class="target-title">
+          <div>
+            <div style="font-weight:700">${escapeHtml(order.orderId)}</div>
+            <div class="muted">${escapeHtml(order.customer || 'No customer')}</div>
+          </div>
+          <span class="pill ${order.complete ? 'status-approved' : 'status-warning'}">${order.approved} / ${order.total} approved</span>
+        </div>
+        <div class="chip-row">
+          <span class="pill">Payment: ${escapeHtml(order.order.paymentStatus || 'unpaid')}</span>
+          <span class="pill">New order: ${escapeHtml(newOrderStatus)}</span>
+          <span class="pill">Completion: ${escapeHtml(notifyStatus)}</span>
+        </div>
+        <div class="muted" style="margin-top:8px">${order.complete ? 'Ready to send to customer.' : 'Waiting for all targets to be approved.'}</div>
+      `;
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.style.marginTop = '10px';
+      bd.appendChild(row);
+      addButton(row, 'Copy customer message', () => copyOrderResults(order.orderId), !order.complete);
+      addButton(row, 'Send completion Discord', () => sendOrderCompletionNotification(order.orderId), !order.complete || notifyStatus === 'sent');
+      addButton(row, 'Mark completion sent', () => sendOrderCompletionNotification(order.orderId, true), !order.complete);
+      addButton(row, 'Send new order Discord', () => sendNewOrderNotification(order.orderId), newOrderStatus === 'sent');
+      el.appendChild(card);
+    });
 }
 
 // ===== Actions =====
@@ -2017,6 +2104,11 @@ function getBulkDefaults(){
 function renderImportPreview(){
   const el = qs('#m-import-preview');
   if (!el) return;
+  if (!state.admin) {
+    el.hidden = true;
+    el.innerHTML = '';
+    return;
+  }
   if (!state.importPreview.length) {
     el.hidden = true;
     el.innerHTML = '';
@@ -2306,6 +2398,101 @@ function copySubmittedResultsMatching(needle, format){
   const query = String(needle || '').trim().toLowerCase();
   if (!query) throw new Error('Enter text to match before copying.');
   return formatSubmittedTasks(getVisibleSubmitted().filter(t => submittedSearchText(t).includes(query)), format);
+}
+
+function getKnownOrderIds(){
+  const ids = new Set();
+  state.orders.forEach(order => { if (order.orderId) ids.add(String(order.orderId)); });
+  state.tasks.forEach(task => { if (task.orderId) ids.add(String(task.orderId)); });
+  return Array.from(ids);
+}
+
+function getOrderMeta(orderId){
+  return state.orders.find(order => String(order.orderId || '') === String(orderId || '')) || {};
+}
+
+function getOrderTasks(orderId){
+  return state.tasks.filter(task => String(task.orderId || '') === String(orderId || ''));
+}
+
+function getApprovedOrderTasks(orderId){
+  return getOrderTasks(orderId).filter(task => task.status === 'submitted' && getReview(task).status === 'approved');
+}
+
+function getOrderCompletion(orderId){
+  const order = getOrderMeta(orderId);
+  const tasks = getOrderTasks(orderId);
+  const approvedTasks = getApprovedOrderTasks(orderId);
+  const priceFromTasks = tasks.reduce((sum, task) => sum + Number(task.pricePerSpy || 0), 0);
+  const totalPrice = Number(order.totalPrice || 0) || priceFromTasks;
+  const customer = order.customer || (tasks.find(task => task.customer) || {}).customer || '';
+  return {
+    orderId,
+    order,
+    tasks,
+    approvedTasks,
+    total: tasks.length || Number(order.targetCount || 0),
+    approved: approvedTasks.length,
+    complete: tasks.length > 0 && approvedTasks.length === tasks.length,
+    customer,
+    totalPrice
+  };
+}
+
+function formatCustomerOrderMessage(orderId){
+  const order = getOrderCompletion(orderId);
+  if (!order.complete) throw new Error('Order is not complete yet. All targets must be approved first.');
+  const results = formatSubmittedTasks(order.approvedTasks, 'compact');
+  const lines = [
+    'Hi ' + (order.customer || 'there') + ',',
+    '',
+    'Your order ' + order.orderId + ' is complete.',
+    '',
+    'Delivered spies: ' + order.approved,
+    'Total: ' + order.approved + ' spies'
+  ];
+  if (order.totalPrice) lines.push('Price total: ' + Number(order.totalPrice).toLocaleString());
+  lines.push('', 'Results:', '', results);
+  return lines.join('\n');
+}
+
+async function copyOrderResults(orderId){
+  await navigator.clipboard.writeText(formatCustomerOrderMessage(orderId));
+  addAuditLog('manager_copied_order_results', orderId, 'Customer delivery message copied');
+  setStatus('Customer message copied for order ' + orderId + '.');
+}
+
+async function sendOrderCompletionNotification(orderId, markOnly){
+  try{
+    const result = await call('', 'POST', {
+      action:'sendOrderCompleteNotification',
+      orderId,
+      actor: state.me || 'manager',
+      markOnly: !!markOnly
+    });
+    const status = result && result.status ? result.status : (markOnly ? 'marked' : 'sent');
+    addAuditLog(markOnly ? 'manager_marked_order_completion_sent' : 'manager_sent_order_completion_notification', orderId, status);
+    setStatus('Order completion notification status: ' + status + '.');
+    await refresh();
+  }catch(e){
+    setStatus('Order completion notification failed: ' + String(e.message || e));
+  }
+}
+
+async function sendNewOrderNotification(orderId){
+  try{
+    const result = await call('', 'POST', {
+      action:'sendNewOrderNotification',
+      orderId,
+      actor: state.me || 'manager'
+    });
+    const status = result && result.status ? result.status : 'sent';
+    addAuditLog('manager_sent_new_order_notification', orderId, status);
+    setStatus('New order notification status: ' + status + '.');
+    await refresh();
+  }catch(e){
+    setStatus('New order notification failed: ' + String(e.message || e));
+  }
 }
 
 function formatSubmittedTasks(tasks, format){
