@@ -35,15 +35,16 @@ function doPost(e) {
 }
 
 function handleRequest(e, method) {
+  let input = {};
   try {
     ensureSheets_();
-    const input = getInput_(e, method);
+    input = getInput_(e, method);
     validateAccess_(input);
     const action = input.action || (e.parameter && e.parameter.action) || 'list';
     const result = dispatch_(action, input);
-    return json_(result);
+    return json_(result, input);
   } catch (err) {
-    return json_({ ok:false, error:String(err && err.message || err) });
+    return json_({ ok:false, error:String(err && err.message || err) }, input);
   }
 }
 
@@ -491,8 +492,14 @@ function requireAdmin_(input) {
   if (expected && String(input.admin || '') !== expected) throw new Error('Admin key required.');
 }
 
-function json_(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+function json_(obj, input) {
+  const json = JSON.stringify(obj);
+  if (input && input.callback) {
+    return ContentService
+      .createTextOutput(String(input.callback) + '(' + json + ');')
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
 }
 
 function uid_(prefix) {

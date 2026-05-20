@@ -567,6 +567,9 @@ async function call(path, method='GET', body){
     if (data && data.ok === false) throw new Error(data.error || 'Request failed.');
     return data;
   }catch(e){
+    if (String(e.message || e).includes('NetworkError') || String(e.message || e).includes('Failed to fetch')) {
+      return await jsonpCall(url, body ? attach(body) : null);
+    }
     // GET fallback with payload
     if(method !== 'GET'){
       const payload = encodeURIComponent(JSON.stringify(attach(body)));
@@ -578,6 +581,28 @@ async function call(path, method='GET', body){
     }
     throw e;
   }
+}
+
+function jsonpCall(url, payload){
+  return new Promise((resolve, reject)=>{
+    const callback = 'jsonp_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+    const script = document.createElement('script');
+    const cleanup = ()=>{ delete window[callback]; script.remove(); };
+    window[callback] = data => {
+      cleanup();
+      if (data && data.ok === false) reject(new Error(data.error || 'Request failed.'));
+      else resolve(data);
+    };
+    const params = ['callback=' + encodeURIComponent(callback)];
+    if (payload) params.push('payload=' + encodeURIComponent(JSON.stringify(payload)));
+    script.onerror = () => {
+      cleanup();
+      reject(new Error('NetworkError: Could not load Apps Script JSONP endpoint. Check deployment URL and Web App access.'));
+    };
+    script.src = url + (url.includes('?') ? '&' : '?') + params.join('&');
+    document.head.appendChild(script);
+    setTimeout(()=>{ if (window[callback]) { cleanup(); reject(new Error('Apps Script request timed out.')); } }, 30000);
+  });
 }
 
 
