@@ -4,73 +4,107 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Bring Em Closer � Stat Spy Coordinator</title>
+<script>
+  (function(){
+    try{
+      var saved = localStorage.getItem('torn_theme');
+      var theme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.dataset.theme = theme;
+    }catch(_){ document.documentElement.dataset.theme = 'light'; }
+  })();
+</script>
 <style>
 :root {
-  --bg: #f4efe4;
-  --card: rgba(255,252,244,.9);
-  --card-strong: #fffaf0;
-  --line: rgba(37, 69, 49, .16);
-  --muted: #6b756b;
-  --text: #172118;
-  --accent: #167344;
-  --good: #1f9d55;
-  --warn: #d99000;
-  --danger: #c24135;
-  --blue: #2563eb;
-  --ink: #172118;
-  --cream: #fff8ea;
+  color-scheme: light;
+  --bg: #f7f7f5;
+  --surface: #ffffff;
+  --surface-2: #f1f1ee;
+  --card: #ffffff;
+  --text: #171717;
+  --text-2: #555550;
+  --muted: #7a7a73;
+  --disabled: #a5a5a0;
+  --line: #e3e3de;
+  --line-strong: #d3d3cc;
+  --accent: #171717;
+  --accent-text: #ffffff;
+  --good: #247a4d;
+  --warn: #996f00;
+  --danger: #b3342b;
+  --focus: rgba(23,23,23,.16);
+  --shadow: 0 1px 2px rgba(0,0,0,.04);
+  --radius: 10px;
+}
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f1011;
+  --surface: #161719;
+  --surface-2: #1d1f22;
+  --card: #141517;
+  --text: #f2f2ef;
+  --text-2: #b9bab5;
+  --muted: #8f918b;
+  --disabled: #62645f;
+  --line: #26282b;
+  --line-strong: #34373b;
+  --accent: #f2f2ef;
+  --accent-text: #111214;
+  --good: #66c18c;
+  --warn: #d6a73c;
+  --danger: #e46d63;
+  --focus: rgba(242,242,239,.18);
+  --shadow: none;
 }
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  background:
-    radial-gradient(circle at top left, rgba(22,115,68,.18), transparent 34rem),
-    radial-gradient(circle at 82% 5%, rgba(217,144,0,.14), transparent 30rem),
-    linear-gradient(135deg, #faf4e8 0%, #eef3df 48%, #f4efe4 100%);
+  background: var(--bg);
   color: var(--text);
-  font: 14px/1.45 "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+  font: 14px/1.45 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
   min-height: 100vh;
 }
-.wrap { max-width: 1180px; margin: 24px auto; padding: 0 16px; }
-h1 { font-size: clamp(28px, 4vw, 42px); margin: 0 0 6px; letter-spacing: -.04em; }
-.sub { color: var(--muted); margin: 0 0 16px; }
+.wrap { max-width: 1120px; margin: 26px auto; padding: 0 18px; }
+h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -.03em; font-weight: 650; }
+.sub { color: var(--muted); margin: 0 0 18px; font-size: 13px; }
 .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0 18px; }
 input, textarea, button, select { font: inherit; }
 input, textarea, select {
-  background: rgba(255,255,255,.78);
+  background: var(--surface);
   border: 1px solid var(--line);
   color: var(--text);
-  border-radius: 12px;
-  padding: 10px 12px;
+  border-radius: 8px;
+  padding: 8px 10px;
   outline: none;
 }
 input:focus, textarea:focus, select:focus {
-  border-color: rgba(22,115,68,.65);
-  box-shadow: 0 0 0 3px rgba(22,115,68,.12);
+  border-color: var(--line-strong);
+  box-shadow: 0 0 0 3px var(--focus);
 }
 textarea { width: 100%; min-height: 140px; resize: vertical; }
 button {
-  background: linear-gradient(180deg, #1f8a56, #126239);
-  color: #fffdf5;
-  border: 1px solid rgba(18,98,57,.3);
-  padding: 10px 14px;
-  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-text);
+  border: 1px solid var(--accent);
+  padding: 8px 12px;
+  border-radius: 8px;
   cursor: pointer;
-  min-height: 42px;
-  font-weight: 700;
-  transition: transform .12s ease, border-color .12s ease, background .12s ease;
+  min-height: 36px;
+  font-weight: 560;
+  transition: background .12s ease, border-color .12s ease, opacity .12s ease;
 }
-button:hover { border-color: rgba(18,98,57,.8); transform: translateY(-1px); box-shadow: 0 10px 22px rgba(18,98,57,.18); }
-button:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+button:hover { opacity: .88; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+button.secondary, .tab, #theme-toggle { background: var(--surface); color: var(--text); border-color: var(--line); }
 .tabs { display: flex; gap: 6px; margin: 0 0 14px; flex-wrap: wrap; }
 .tab {
-  padding: 8px 12px;
+  padding: 7px 10px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(255,255,255,.58);
-  color: #244130;
+  background: var(--surface);
+  color: var(--text-2);
+  min-height: 32px;
 }
-.tab.active { background: #173f2b; border-color: #173f2b; color:#fffaf0; }
+.tab.active { background: var(--text); border-color: var(--text); color: var(--bg); }
 .grid { display: grid; gap: 12px; }
 @media (min-width: 800px) {
   .grid.cards { grid-template-columns: repeat(3, 1fr); }
@@ -78,44 +112,35 @@ button:disabled { opacity: .55; cursor: not-allowed; transform: none; }
 .card {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 20px;
-  box-shadow: 0 18px 55px rgba(50,42,28,.12);
-  backdrop-filter: blur(12px);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
 }
-.card .hd { padding: 16px 16px 0; font-weight: 800; letter-spacing: -.01em; }
-.card .bd { padding: 16px; }
+.card .hd { padding: 14px 14px 0; font-weight: 620; letter-spacing: -.01em; color: var(--text); }
+.card .bd { padding: 14px; }
 .muted { color: var(--muted); }
 .warn-text { color: var(--warn); }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.top-controls { position: sticky; top: 0; z-index: 3; background: linear-gradient(180deg, rgba(244,239,228,.98) 78%, rgba(244,239,228,0)); padding-top: 8px; padding-bottom: 8px; }
+.top-controls { position: sticky; top: 0; z-index: 3; background: color-mix(in srgb, var(--bg) 94%, transparent); backdrop-filter: blur(12px); padding-top: 8px; padding-bottom: 8px; }
 .dashboard { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 8px; margin-bottom: 12px; }
-.dash-card { background:linear-gradient(180deg, rgba(255,255,255,.9), rgba(255,248,234,.82)); border:1px solid var(--line); border-radius:16px; padding:12px 14px; }
+.dash-card { background: var(--surface); border:1px solid var(--line); border-radius: var(--radius); padding:10px 12px; }
 .dash-card .label { color: var(--muted); font-size: 12px; }
-.dash-card .value { font-size: 20px; font-weight: 700; margin-top: 2px; }
+.dash-card .value { font-size: 18px; font-weight: 650; margin-top: 2px; }
 .filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
 .filters input { min-width: 220px; flex: 1; }
 .pill {
   display: inline-block;
-  padding: 2px 8px;
+  padding: 2px 7px;
   border-radius: 999px;
-  border: 1px solid #2a3a63;
-  font-size: 12px;
-  font-weight: 700;
+  border: 1px solid var(--line);
+  font-size: 11px;
+  font-weight: 580;
   letter-spacing: .02em;
 }
-.status-open { color: #173f2b; background: #dceee1; }
-.status-claimed { color: #111; background: var(--warn); }
-.status-submitted { color: #111; background: var(--good); }
-.status-stale { color: #fff; background: var(--danger); border-color: #f87171; }
-.status-warning { color: #111; background: var(--warn); border-color: #fde68a; }
-.status-assigned { color:#dbeafe; background:#1d4ed8; border-color:#60a5fa; }
-.status-pending_review { color:#111; background:#facc15; border-color:#fde68a; }
-.status-approved { color:#111; background:#22c55e; border-color:#86efac; }
-.status-rejected { color:#fff; background:#991b1b; border-color:#f87171; }
-.priority-rush { color:#fff; background:#b91c1c; border-color:#f87171; }
-.priority-high { color:#111; background:#fb923c; border-color:#fdba74; }
-.priority-normal { color:#173f2b; background:#dceee1; border-color:#99c7a6; }
-.priority-low { color:#244130; background:#edf7df; border-color:#bfdb9b; }
+.status-open, .priority-normal { color: var(--text-2); background: var(--surface-2); }
+.status-claimed, .status-warning, .status-pending_review, .priority-high { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
+.status-submitted, .status-approved, .priority-low { color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); }
+.status-stale, .status-rejected, .priority-rush { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.status-assigned { color: var(--blue); background: color-mix(in srgb, var(--blue) 12%, transparent); }
 .target-card.warning { border-color: var(--warn); box-shadow: 0 0 0 1px rgba(251,191,36,.25); }
 .target-card.stale { border-color: var(--danger); box-shadow: 0 0 0 1px rgba(239,68,68,.35); }
 .target-title { display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
@@ -127,21 +152,32 @@ button:disabled { opacity: .55; cursor: not-allowed; transform: none; }
 .danger-box { border:1px solid var(--danger); background:rgba(239,68,68,.12); color:#fecaca; border-radius:10px; padding:8px; margin-top:8px; }
 .table-wrap { overflow-x:auto; }
 table { width:100%; border-collapse:collapse; }
-th, td { border-bottom:1px solid #22314f; padding:8px; text-align:left; vertical-align:top; }
+th, td { border-bottom:1px solid var(--line); padding:8px; text-align:left; vertical-align:top; }
 th { color:var(--muted); font-size:12px; }
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   white-space: pre-wrap;
-  background: rgba(255,255,255,.68);
+  background: var(--surface-2);
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 10px;
 }
-.divider { height: 1px; background: #1a2744; margin: 8px 0; }
-.progress-wrap { border:1px solid var(--line); background:rgba(255,255,255,.72); border-radius:14px; padding:10px; }
-.progress-bar { height:12px; background:#e7dfd0; border-radius:999px; overflow:hidden; border:1px solid rgba(23,33,24,.08); }
-.progress-fill { height:100%; width:0%; background:linear-gradient(90deg, var(--accent), var(--blue)); transition:width .18s ease; }
+.divider { height: 1px; background: var(--line); margin: 8px 0; }
+.progress-wrap { border:1px solid var(--line); background:var(--surface); border-radius:var(--radius); padding:10px; }
+.progress-bar { height:8px; background:var(--surface-2); border-radius:999px; overflow:hidden; }
+.progress-fill { height:100%; width:0%; background:var(--accent); transition:width .18s ease; }
 .progress-meta { display:flex; justify-content:space-between; gap:8px; margin-top:8px; color:var(--muted); font-size:12px; flex-wrap:wrap; }
+.employee-focus { max-width: 720px; margin: 0 auto; }
+.employee-hero { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:4px 0 14px; }
+.employee-count { font-size:13px; color:var(--muted); }
+.next-target { padding:20px; }
+.next-target-name { font-size:26px; line-height:1.08; letter-spacing:-.04em; font-weight:680; }
+.next-target-id { margin-top:6px; color:var(--muted); font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.primary-action { min-height:44px; padding:10px 16px; }
+.quiet { background:var(--surface); color:var(--text); border-color:var(--line); }
+.success-note { color:var(--good); font-size:13px; margin-top:10px; min-height:18px; }
+body:not(.is-admin) .manager-only { display:none !important; }
+.is-admin .filters.manager-only { display:flex; }
 @media (max-width: 760px) {
   .wrap { margin: 10px auto; padding: 0 10px; }
   .dashboard { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -163,6 +199,7 @@ th { color:var(--muted); font-size:12px; }
       <input id="adm" placeholder="Admin Key (admins only)" style="width:220px">
       <button id="save">Save</button>
       <button id="refresh">Refresh</button>
+      <button id="theme-toggle" type="button" class="secondary">Theme</button>
       <span id="err" class="muted"></span>
     </div>
 
@@ -192,7 +229,7 @@ th { color:var(--muted); font-size:12px; }
     <section id="tab-board">
       <div class="card"><div class="hd">Open & Claimed</div><div class="bd">
         <div id="dashboard" class="dashboard"></div>
-        <div class="filters">
+        <div class="filters manager-only">
           <input id="target-search" placeholder="Search target name or ID">
           <select id="status-filter">
             <option value="all">All</option>
@@ -392,11 +429,29 @@ const REVIEW_KEY = "torn_spy_review_overrides";
 const ASSIGNMENT_KEY = "torn_spy_assignments";
 const HISTORY_KEY = "torn_spy_delivery_history";
 const JOB_SPECIAL_URL = "https://www.torn.com/companies.php?step=your&type=1";
+const THEME_KEY = "torn_theme";
 // ===== Helpers =====
 function qs(sel){ return document.querySelector(sel); }
 function setStatus(msg){ const e=qs('#err'); if(e) e.textContent = msg || ''; }
 function normalizeEmployeeName(name){ return String(name || '').trim().toLowerCase(); }
 function escapeHtml(v){ return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function setTheme(theme){
+  const next = theme === 'dark' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem(THEME_KEY, next);
+  const btn = qs('#theme-toggle');
+  if (btn) btn.textContent = next === 'dark' ? 'Light mode' : 'Dark mode';
+}
+
+function initTheme(){
+  const current = document.documentElement.dataset.theme || 'light';
+  setTheme(current);
+}
+
+function toggleTheme(){
+  setTheme((document.documentElement.dataset.theme || 'light') === 'dark' ? 'light' : 'dark');
+}
 
 const state={ 
   tasks:[], 
@@ -889,6 +944,7 @@ function isAdmin(){
 
 function enforceVisibility(){
   const isAdminUI = !!state.admin; // show admin UI only if admin key present locally
+  document.body.classList.toggle('is-admin', isAdminUI);
   const rc = document.getElementById('recent-card'); if(rc) rc.style.display = isAdminUI ? '' : 'none';
   const reviewCard = document.getElementById('review-card'); if(reviewCard) reviewCard.style.display = isAdminUI ? '' : 'none';
   const auditCard = document.getElementById('audit-card'); if(auditCard) auditCard.style.display = isAdminUI ? '' : 'none';
@@ -920,6 +976,11 @@ function render(){
 function renderDashboard(){
   const el = qs('#dashboard');
   if (!el) return;
+  if (!state.admin) {
+    const remaining = getEmployeeRelevantTargets().filter(t => t.status !== 'submitted').length;
+    el.innerHTML = `<div class="dash-card"><div class="label">Targets left</div><div class="value">${remaining}</div></div>`;
+    return;
+  }
   const today = new Date(); today.setHours(0,0,0,0);
   const submittedToday = state.tasks.filter(t => t.status === 'submitted' && ((getSubmittedAt(t) || new Date(0)) >= today)).length;
   const values = [
@@ -954,7 +1015,69 @@ function renderTargets(){
   const tasksEl = qs('#tasks');
   if (!tasksEl) return;
   tasksEl.innerHTML = '';
+  if (!state.admin) {
+    renderEmployeeTargets(tasksEl);
+    return;
+  }
   filteredTargets().forEach(t => tasksEl.appendChild(renderTargetCard(t)));
+}
+
+function getEmployeeRelevantTargets(){
+  const me = normalizeEmployeeName(state.me);
+  return state.tasks.filter(t => {
+    if (t.status === 'submitted') return false;
+    const assignment = getAssignment(t);
+    if (t.status === 'claimed') return normalizeEmployeeName(t.claimedBy) === me || !t.claimedBy;
+    if (assignment) return normalizeEmployeeName(assignment.assignedTo) === me;
+    return getTargetStatus(t) === 'open';
+  });
+}
+
+function getNextEmployeeTarget(){
+  const me = normalizeEmployeeName(state.me);
+  const relevant = getEmployeeRelevantTargets();
+  return relevant.find(t => t.status === 'claimed' && normalizeEmployeeName(t.claimedBy) === me)
+    || relevant.find(t => getAssignment(t))
+    || relevant.find(t => getTargetStatus(t) === 'open')
+    || null;
+}
+
+function renderEmployeeTargets(parent){
+  const remaining = getEmployeeRelevantTargets().length;
+  const target = getNextEmployeeTarget();
+  const wrap = document.createElement('div');
+  wrap.className = 'employee-focus';
+  if (!target) {
+    wrap.innerHTML = `<div class="employee-hero"><div><h2 style="margin:0">No targets ready</h2><div class="employee-count">Refresh later or ask the manager for more targets.</div></div></div>`;
+    parent.appendChild(wrap);
+    return;
+  }
+  const status = getTargetStatus(target);
+  const card = document.createElement('div');
+  card.className = 'card next-target';
+  card.innerHTML = `
+    <div class="employee-hero">
+      <div>
+        <div class="employee-count">${remaining} target${remaining === 1 ? '' : 's'} left</div>
+        <div class="next-target-name">${escapeHtml(target.targetName || 'Unknown')}</div>
+        <div class="next-target-id">${target.targetId ? '[' + escapeHtml(target.targetId) + ']' : 'No ID'}</div>
+      </div>
+      <span class="pill status-${status}">${escapeHtml(status.toUpperCase())}</span>
+    </div>
+  `;
+  const row = document.createElement('div');
+  row.className = 'row';
+  card.appendChild(row);
+  addButton(row, 'Copy target', () => copyTarget(target), false, 'primary-action');
+  addButton(row, 'Job special', () => openJobSpecial(target), false, 'quiet');
+  if (status === 'open' || status === 'assigned') addButton(row, 'Claim', () => claim(target.id), isTaskBusy(target.id), 'quiet');
+  if (target.status === 'claimed' && normalizeEmployeeName(target.claimedBy) === normalizeEmployeeName(state.me)) renderSubmitPanel(card, target);
+  const feedback = document.createElement('div');
+  feedback.id = 'employee-copy-feedback';
+  feedback.className = 'success-note';
+  card.appendChild(feedback);
+  wrap.appendChild(card);
+  parent.appendChild(wrap);
 }
 
 function renderTargetCard(t){
@@ -1013,10 +1136,11 @@ function renderTargetCard(t){
   return card;
 }
 
-function addButton(parent, text, onClick, disabled){
+function addButton(parent, text, onClick, disabled, className){
   const button = document.createElement('button');
   button.textContent = text;
   button.disabled = !!disabled;
+  if (className) button.className = className;
   button.onclick = onClick;
   parent.appendChild(button);
 }
@@ -2130,6 +2254,8 @@ async function copyTarget(target){
   const text = formatTargetReference(target) + (target.notes ? ' - ' + target.notes : '');
   await navigator.clipboard.writeText(text);
   setStatus('Target copied.');
+  const feedback = qs('#employee-copy-feedback');
+  if (feedback) feedback.textContent = 'Copied ' + formatTargetReference(target);
 }
 
 function formatTargetReference(target){
@@ -2153,6 +2279,7 @@ async function openJobSpecial(target){
 (function bind(){
   const saveBtn=qs('#save');   if(saveBtn) saveBtn.addEventListener('click',()=>{ saveSettings(); refresh(); });
   const refBtn =qs('#refresh');if(refBtn)  refBtn.addEventListener('click',()=>{ refresh(); });
+  const themeBtn=qs('#theme-toggle'); if(themeBtn) themeBtn.addEventListener('click',toggleTheme);
   const addBtn =qs('#m-add');  if(addBtn)  addBtn.addEventListener('click',addTask);
   const previewImportBtn=qs('#m-preview-import'); if(previewImportBtn) previewImportBtn.addEventListener('click',previewImportTargets);
   const importBtn=qs('#m-import'); if(importBtn) importBtn.addEventListener('click',importTargets);
@@ -2235,6 +2362,7 @@ async function openJobSpecial(target){
 })();
 
 // ===== Init =====
+initTheme();
 loadSettings();
 setStatus('Loading...');
 refresh();
