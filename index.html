@@ -13,6 +13,7 @@
   --accent: #22c55e;
   --good: #22c55e;
   --warn: #fbbf24;
+  --danger: #ef4444;
 }
 * { box-sizing: border-box; }
 body {
@@ -41,9 +42,10 @@ button {
   padding: 10px 14px;
   border-radius: 10px;
   cursor: pointer;
+  min-height: 42px;
 }
 button:hover { border-color: #3a5499; }
-.tabs { display: flex; gap: 6px; margin: 0 0 14px; }
+.tabs { display: flex; gap: 6px; margin: 0 0 14px; flex-wrap: wrap; }
 .tab {
   padding: 8px 12px;
   border: 1px solid #22314f;
@@ -66,16 +68,44 @@ button:hover { border-color: #3a5499; }
 .card .bd { padding: 14px; }
 .muted { color: var(--muted); }
 .warn-text { color: var(--warn); }
-.row { display: flex; gap: 8px; align-items: center; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.top-controls { position: sticky; top: 0; z-index: 3; background: linear-gradient(180deg, var(--bg) 80%, rgba(15,26,19,0)); padding-top: 8px; }
+.dashboard { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.dash-card { background:#0e1626; border:1px solid #22314f; border-radius:14px; padding:10px 12px; }
+.dash-card .label { color: var(--muted); font-size: 12px; }
+.dash-card .value { font-size: 20px; font-weight: 700; margin-top: 2px; }
+.filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+.filters input { min-width: 220px; flex: 1; }
 .pill {
   display: inline-block;
   padding: 2px 8px;
   border-radius: 999px;
   border: 1px solid #2a3a63;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .02em;
 }
 .status-open { color: #fff; background: #2a3a63; }
 .status-claimed { color: #111; background: var(--warn); }
 .status-submitted { color: #111; background: var(--good); }
+.status-stale { color: #fff; background: var(--danger); border-color: #f87171; }
+.status-warning { color: #111; background: var(--warn); border-color: #fde68a; }
+.priority-rush { color:#fff; background:#b91c1c; border-color:#f87171; }
+.priority-high { color:#111; background:#fb923c; border-color:#fdba74; }
+.priority-normal { color:#dbeafe; background:#1e3a8a; border-color:#3b82f6; }
+.priority-low { color:#dcfce7; background:#14532d; border-color:#22c55e; }
+.target-card.warning { border-color: var(--warn); box-shadow: 0 0 0 1px rgba(251,191,36,.25); }
+.target-card.stale { border-color: var(--danger); box-shadow: 0 0 0 1px rgba(239,68,68,.35); }
+.target-title { display:flex; justify-content:space-between; gap:8px; align-items:flex-start; }
+.chip-row { display:flex; gap:6px; flex-wrap:wrap; margin:8px 0; }
+.preview-grid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:8px; margin-top:8px; }
+.preview-grid label { display:grid; gap:4px; color: var(--muted); font-size:12px; }
+.preview-grid input { width:100%; }
+.warning-box { border:1px solid var(--warn); background:rgba(251,191,36,.12); color:#fde68a; border-radius:10px; padding:8px; margin-top:8px; }
+.table-wrap { overflow-x:auto; }
+table { width:100%; border-collapse:collapse; }
+th, td { border-bottom:1px solid #22314f; padding:8px; text-align:left; vertical-align:top; }
+th { color:var(--muted); font-size:12px; }
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   white-space: pre-wrap;
@@ -85,12 +115,21 @@ button:hover { border-color: #3a5499; }
   padding: 10px;
 }
 .divider { height: 1px; background: #1a2744; margin: 8px 0; }
+@media (max-width: 760px) {
+  .wrap { margin: 10px auto; padding: 0 10px; }
+  .dashboard { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dash-card:last-child { grid-column: span 2; }
+  .bar input, .bar button, .filters input, .filters select, .filters button { width:100% !important; }
+  .preview-grid { grid-template-columns: 1fr; }
+  .grid.cards { grid-template-columns: 1fr; }
+}
 </style>
 </head>
 <body>
   <div class="wrap">
 <h1>Bring Em Closer Law Firm � Torn City</h1>
 <p class="sub">Internal coordinator for Stat Spies. Claim, submit, and standardize results.</p>
+    <div class="top-controls">
     <div class="bar">
       <input id="me" placeholder="Your display name" style="width:220px">
       <input id="api-key" placeholder="Access Code" style="width:220px">
@@ -108,6 +147,7 @@ button:hover { border-color: #3a5499; }
       <button id="tab-manage-btn" class="tab" data-tab="manage">Manager</button>
 
     </div>
+    </div>
 
     <section id="tab-tutorial" hidden>
       <div class="card"><div class="hd">How To Use This Page</div><div class="bd">
@@ -124,15 +164,45 @@ button:hover { border-color: #3a5499; }
 
     <section id="tab-board">
       <div class="card"><div class="hd">Open & Claimed</div><div class="bd">
+        <div id="dashboard" class="dashboard"></div>
+        <div class="filters">
+          <input id="target-search" placeholder="Search target name or ID">
+          <select id="status-filter">
+            <option value="all">All</option>
+            <option value="open">Open</option>
+            <option value="claimed">Claimed</option>
+            <option value="stale">Stale</option>
+            <option value="submitted">Submitted</option>
+          </select>
+          <select id="priority-filter">
+            <option value="all">All priorities</option>
+            <option value="rush">Rush</option>
+            <option value="high">High</option>
+            <option value="normal">Normal</option>
+            <option value="low">Low</option>
+          </select>
+        </div>
         <div id="tasks" class="grid cards"></div>
       </div></div>
 
         <div class="card" style="margin-top:12px" id="recent-card">
           <div class="hd">
             Recently Submitted
-            <button id="copy-all" style="margin-left:8px; padding:4px 8px; font-size:12px">Copy All</button>
           </div>
           <div class="bd">
+            <div class="filters">
+              <select id="recent-filter">
+                <option value="today">Today</option>
+                <option value="24h">Last 24h</option>
+                <option value="all">All</option>
+              </select>
+              <select id="copy-format">
+                <option value="compact">Compact</option>
+                <option value="discord">Discord</option>
+                <option value="plain">Plain text</option>
+              </select>
+              <button id="copy-all">Copy all visible</button>
+            </div>
             <div id="recent" class="grid cards"></div>
           </div>
         </div>
@@ -155,17 +225,25 @@ button:hover { border-color: #3a5499; }
           <input id="m-name" placeholder="Target name (e.g., tc103)" style="flex:1">
           <input id="m-id" placeholder="Target ID (optional)" style="width:180px">
           <input id="m-notes" placeholder="Notes (faction, deadline)" style="flex:1">
+          <select id="m-priority">
+            <option value="normal">Normal</option>
+            <option value="rush">Rush</option>
+            <option value="high">High</option>
+            <option value="low">Low</option>
+          </select>
           <button id="m-add">Add to Board</button>
         </div>
         <div class="muted">New tasks appear on the board after refresh.</div>
       </div></div>
       <div class="card" style="margin-top:12px"><div class="hd">Mass Import</div><div class="bd grid">
-        <textarea id="m-bulk" placeholder="One target per line. Use name | id | notes, name, id, notes, tab-separated values, or just a name."></textarea>
+        <textarea id="m-bulk" placeholder="One target per line. Use name | id | notes | priority, name, id, notes, priority, tab-separated values, Name [ID], or profile URLs."></textarea>
         <div class="row">
-          <button id="m-import">Import Targets</button>
+          <button id="m-preview-import">Preview Import</button>
+          <button id="m-import">Import New Targets</button>
           <div class="muted">Blank lines are ignored. Target ID and notes are optional.</div>
         </div>
         <div id="m-import-summary" class="mono" hidden></div>
+        <div id="m-import-preview" class="table-wrap" hidden></div>
       </div></div>
     </section>
 
@@ -174,10 +252,14 @@ button:hover { border-color: #3a5499; }
 <script>
 const DEFAULT_API = "https://script.google.com/macros/s/AKfycbxsuE-bQ47I5sc5oC-Ju6ARc3vTzHU1fRGNWbh2eRVTeGlO3qTAawxcENv_KnjNcNHv/exec";
 const DEFAULT_KEY = "";
+const STALE_WARNING_MINUTES = 30;
+const STALE_DANGER_MINUTES = 60;
+const AUDIT_KEY = "torn_spy_audit_log";
 // ===== Helpers =====
 function qs(sel){ return document.querySelector(sel); }
 function setStatus(msg){ const e=qs('#err'); if(e) e.textContent = msg || ''; }
 function normalizeEmployeeName(name){ return String(name || '').trim().toLowerCase(); }
+function escapeHtml(v){ return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 const state={ 
   tasks:[], 
@@ -185,7 +267,11 @@ const state={
   api: DEFAULT_API, 
   key: DEFAULT_KEY, 
   admin:"",
-  busyTaskIds: new Set()
+  busyTaskIds: new Set(),
+  filters: { search:"", status:"all", priority:"all", recent:"today", copyFormat:"compact" },
+  lastUpdated: "",
+  importPreview: [],
+  auditLog: []
 };
 
 function setTaskBusy(id, busy){
@@ -320,6 +406,7 @@ function loadSettings(){
   state.me=localStorage.getItem('torn_employee')||'';
   state.key = localStorage.getItem('torn_api_key') || DEFAULT_KEY;
   state.admin = localStorage.getItem('torn_admin_key') || '';
+  try{ state.auditLog = JSON.parse(localStorage.getItem(AUDIT_KEY) || '[]'); }catch(_){ state.auditLog = []; }
   if (qs('#api-key')) qs('#api-key').value = state.key;
   if (qs('#adm')) qs('#adm').value = state.admin;
   const meI=qs('#me');
@@ -346,6 +433,7 @@ async function call(path, method='GET', body){
   if(!state.key) throw new Error('Access code missing. Enter the access code and press Save.');
 
   // Build URL + query with api key and admin key
+  // TODO: this frontend access code is convenience gating only. Real validation must stay server-side.
   let url = state.api + path;
   const q = [];
   if (state.key)   q.push('key='   + encodeURIComponent(state.key));
@@ -513,6 +601,38 @@ function parseSpy(raw){
   });
 }
 
+function parseSpyResult(rawText){
+  const parsed = parseSpy(rawText || '');
+  const result = {
+    targetId: parsed.id || '',
+    targetName: parsed.name || '',
+    strength: parsed.strength,
+    defense: parsed.defense,
+    speed: parsed.speed,
+    dexterity: parsed.dexterity,
+    total: parsed.total,
+    level: parsed.level,
+    rawText: rawText || '',
+    warnings: []
+  };
+  if (!result.targetName) result.warnings.push('Target name was not detected.');
+  if (!result.targetId) result.warnings.push('Target ID was not detected.');
+  ['strength','defense','speed','dexterity'].forEach(key => {
+    if (result[key] == null) result.warnings.push(key[0].toUpperCase() + key.slice(1) + ' is missing or N/A.');
+  });
+  const has4 = [result.strength,result.speed,result.dexterity,result.defense].every(v => v != null);
+  if (has4) {
+    const calculated = result.strength + result.speed + result.dexterity + result.defense;
+    if (result.total != null && Math.abs(calculated - result.total) > 1) {
+      result.warnings.push('Total did not match stat sum; calculated total will be used.');
+    }
+    result.total = calculated;
+  } else if (result.total == null) {
+    result.warnings.push('Total is missing because not all stats were found.');
+  }
+  return result;
+}
+
 // Optional: your formatter, updated to show either targetId or parsed id
 function formatBlock(p){
   completeStats(p);
@@ -608,80 +728,156 @@ function enforceVisibility(){
 
 // ===== Render =====
 function render(){
-  const open = state.tasks.filter(t=>t.status!=='submitted');
-  const rec  = state.tasks.filter(t=>t.status==='submitted').slice(0,12);
+  renderDashboard();
+  renderTargets();
+  renderRecentlySubmitted();
+  renderImportPreview();
+}
 
-  const tasksEl=qs('#tasks'); if(!tasksEl) return; tasksEl.innerHTML='';
-  open.forEach(t=>{
-    const card=document.createElement('div'); card.className='card';
-    const bd=document.createElement('div'); bd.className='bd'; card.appendChild(bd);
+function renderDashboard(){
+  const el = qs('#dashboard');
+  if (!el) return;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const submittedToday = state.tasks.filter(t => t.status === 'submitted' && ((getSubmittedAt(t) || new Date(0)) >= today)).length;
+  const values = [
+    ['Open targets', state.tasks.filter(t => getTargetStatus(t) === 'open').length],
+    ['Claimed targets', state.tasks.filter(t => t.status === 'claimed').length],
+    ['Submitted today', submittedToday],
+    ['Stale claims', state.tasks.filter(isClaimStale).length],
+    ['Last updated', state.lastUpdated ? new Date(state.lastUpdated).toLocaleTimeString() : '-']
+  ];
+  el.innerHTML = values.map(([label,value]) => `<div class="dash-card"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div></div>`).join('');
+}
 
-    const header=document.createElement('div');
-    header.style.fontWeight='600'; header.style.fontSize='16px';
-    header.textContent=(t.targetName||'Unknown') + (t.targetId? ' ['+t.targetId+']':'' );
-    bd.appendChild(header);
-
-    if(t.notes){ const note=document.createElement('div'); note.className='muted'; note.style.marginTop='4px'; note.textContent=t.notes; bd.appendChild(note); }
-
-    const stat=document.createElement('div'); stat.className='muted'; stat.style.marginTop='4px';
-    stat.textContent = t.claimedBy? ('Claimed by '+t.claimedBy) : 'Not claimed'; bd.appendChild(stat);
-
-    const row=document.createElement('div'); row.className='row'; row.style.marginTop='8px'; bd.appendChild(row);
-    if(t.status==='open'){
-      const b=document.createElement('button');
-      b.textContent = isTaskBusy(t.id) ? 'Claiming...' : 'Claim';
-      b.disabled = isTaskBusy(t.id);
-      b.onclick=function(){claim(t.id)};
-      row.appendChild(b);
-    }
-    if(t.status==='claimed' && normalizeEmployeeName(t.claimedBy)===normalizeEmployeeName(state.me)){
-      const u=document.createElement('button');
-      u.textContent = isTaskBusy(t.id) ? 'Working...' : 'Unclaim';
-      u.disabled = isTaskBusy(t.id);
-      u.onclick=function(){unclaim(t.id)};
-      row.appendChild(u);
-      const hint=document.createElement('div'); hint.className='muted'; hint.style.margin='10px 0 6px'; hint.textContent='Paste one or more spy logs for this target. We will merge and auto-calculate the total.'; bd.appendChild(hint);
-      const ta=document.createElement('textarea'); ta.id='paste-'+t.id; ta.placeholder='Paste spy text here'; bd.appendChild(ta);
-      const warn=document.createElement('div'); warn.id='warn-'+t.id; warn.className='muted'; warn.style.marginTop='6px'; bd.appendChild(warn);
-      ta.addEventListener('input', function(){ updateClaimPasteWarning(t.id); });
-      const row2=document.createElement('div'); row2.className='row'; row2.style.marginTop='8px'; bd.appendChild(row2);
-      const s=document.createElement('button');
-      s.textContent = isTaskBusy(t.id) ? 'Submitting...' : 'Submit Result';
-      s.disabled = isTaskBusy(t.id);
-      s.onclick=function(){submitSpy(t.id)};
-      row2.appendChild(s);
-    }
-
-    tasksEl.appendChild(card);
+function filteredTargets(){
+  const search = state.filters.search.trim().toLowerCase();
+  return state.tasks.filter(t => {
+    const status = getTargetStatus(t);
+    const priority = normalizePriority(t.priority || t.notesPriority);
+    if (state.filters.status !== 'all' && status !== state.filters.status) return false;
+    if (state.filters.priority !== 'all' && priority !== state.filters.priority) return false;
+    if (!search) return true;
+    return String(t.targetName || '').toLowerCase().includes(search) || String(t.targetId || '').toLowerCase().includes(search);
   });
+}
 
-  const recentEl=qs('#recent'); if(recentEl){
-    recentEl.innerHTML='';
-    rec.forEach(t=>{
-      const card=document.createElement('div'); card.className='card';
-      const bd=document.createElement('div'); bd.className='bd'; card.appendChild(bd);
-      const title=document.createElement('div'); title.style.fontWeight='600'; title.textContent=(t.targetName||'Unknown') + (t.targetId? ' ['+t.targetId+']':'' ); bd.appendChild(title);
-      const by=document.createElement('div'); by.className='muted'; by.textContent='by ' + (t.claimedBy||'�'); bd.appendChild(by);
-      const pre=document.createElement('div'); pre.className='mono'; pre.style.marginTop='8px'; pre.textContent=(t.formatted || (t.payload && t.payload.formatted) || ''); bd.appendChild(pre);
-      recentEl.appendChild(card);
-    });
+function renderTargets(){
+  const tasksEl = qs('#tasks');
+  if (!tasksEl) return;
+  tasksEl.innerHTML = '';
+  filteredTargets().forEach(t => tasksEl.appendChild(renderTargetCard(t)));
+}
+
+function renderTargetCard(t){
+  const status = getTargetStatus(t);
+  const priority = normalizePriority(t.priority);
+  const claimedAt = getClaimedAt(t);
+  const card = document.createElement('div');
+  card.className = 'card target-card' + (status === 'stale' ? ' stale' : isClaimWarning(t) ? ' warning' : '');
+  const bd = document.createElement('div');
+  bd.className = 'bd';
+  card.appendChild(bd);
+  bd.innerHTML = `
+    <div class="target-title">
+      <div>
+        <div style="font-weight:700;font-size:16px">${escapeHtml(t.targetName || 'Unknown')}</div>
+        <div class="muted">${t.targetId ? '[' + escapeHtml(t.targetId) + ']' : 'No target ID'}</div>
+      </div>
+      <span class="pill priority-${priority}">${priority.toUpperCase()}</span>
+    </div>
+    <div class="chip-row">
+      <span class="pill status-${status}">${status.toUpperCase()}</span>
+      ${isClaimWarning(t) ? '<span class="pill status-warning">WARNING</span>' : ''}
+      ${t.claimedBy ? '<span class="pill">Claimed by: ' + escapeHtml(t.claimedBy) + '</span>' : ''}
+      ${t.claimedBy ? '<span class="pill">Age: ' + escapeHtml(formatAge(claimedAt)) + '</span>' : ''}
+    </div>
+    ${t.notes ? '<div class="muted">' + escapeHtml(t.notes) + '</div>' : ''}
+  `;
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.style.marginTop = '10px';
+  bd.appendChild(row);
+  if (status === 'open') addButton(row, isTaskBusy(t.id) ? 'Claiming...' : 'Claim', () => claim(t.id), isTaskBusy(t.id));
+  addButton(row, 'Copy', () => copyTarget(t));
+  if (t.status === 'claimed' && (normalizeEmployeeName(t.claimedBy) === normalizeEmployeeName(state.me) || status === 'stale')) {
+    addButton(row, status === 'stale' ? 'Release stale' : 'Release', () => unclaim(t.id), isTaskBusy(t.id));
   }
+  if (t.status === 'claimed' && normalizeEmployeeName(t.claimedBy) === normalizeEmployeeName(state.me)) renderSubmitPanel(bd, t);
+  return card;
+}
+
+function addButton(parent, text, onClick, disabled){
+  const button = document.createElement('button');
+  button.textContent = text;
+  button.disabled = !!disabled;
+  button.onclick = onClick;
+  parent.appendChild(button);
+}
+
+function renderSubmitPanel(parent, t){
+  const hint = document.createElement('div');
+  hint.className = 'muted';
+  hint.style.margin = '10px 0 6px';
+  hint.textContent = 'Paste spy text, review parsed fields, correct if needed, then submit.';
+  parent.appendChild(hint);
+  const ta = document.createElement('textarea');
+  ta.id = 'paste-' + t.id;
+  ta.placeholder = 'Paste spy text here';
+  parent.appendChild(ta);
+  const preview = document.createElement('div');
+  preview.id = 'spy-preview-' + t.id;
+  parent.appendChild(preview);
+  ta.addEventListener('input', function(){ updateSpyPreview(t.id); });
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.style.marginTop = '8px';
+  parent.appendChild(row);
+  addButton(row, isTaskBusy(t.id) ? 'Submitting...' : 'Submit Result', () => submitSpy(t.id), isTaskBusy(t.id));
+}
+
+function renderRecentlySubmitted(){
+  const recentEl = qs('#recent');
+  if (!recentEl) return;
+  recentEl.innerHTML = '';
+  getVisibleSubmitted().slice(0, 24).forEach(t => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    const bd = document.createElement('div');
+    bd.className = 'bd';
+    card.appendChild(bd);
+    const title = document.createElement('div');
+    title.style.fontWeight = '600';
+    title.textContent = (t.targetName || 'Unknown') + (t.targetId ? ' [' + t.targetId + ']' : '');
+    bd.appendChild(title);
+    const by = document.createElement('div');
+    by.className = 'muted';
+    by.textContent = 'by ' + (t.claimedBy || '-') + ' | ' + formatAge(getSubmittedAt(t));
+    bd.appendChild(by);
+    const pre = document.createElement('div');
+    pre.className = 'mono';
+    pre.style.marginTop = '8px';
+    pre.textContent = t.formatted || (t.payload && t.payload.formatted) || '';
+    bd.appendChild(pre);
+    recentEl.appendChild(card);
+  });
 }
 
 // ===== Actions =====
-async function refresh(){ setStatus(''); try{ const data=await call('?action=list','GET'); state.tasks=data.tasks||[]; render(); }catch(e){ setStatus('Refresh failed: '+String(e.message||e)); }enforceVisibility(); }
+async function refresh(){ setStatus(''); try{ const data=await call('?action=list','GET'); state.tasks=data.tasks||[]; state.lastUpdated = new Date().toISOString(); render(); }catch(e){ setStatus('Refresh failed: '+String(e.message||e)); }enforceVisibility(); }
 async function claim(id){
   if(!state.me){ alert('Set your display name first.'); return; }
   const task = state.tasks.find(t => String(t.id)===String(id));
   if (task) {
     task.status = 'claimed';
     task.claimedBy = state.me.trim();
+    task.claimedAt = new Date().toISOString();
     setTaskBusy(id, true);
     render();
   }
   setStatus('Claiming target...');
   try{
     await call('', 'POST', {action:'claim', id, employee: state.me.trim()});
+    addAuditLog('target_claimed', task && task.targetId, task && task.targetName);
     setStatus('Claim registered.');
     setTaskBusy(id, false);
     refresh();
@@ -696,12 +892,14 @@ async function unclaim(id){
   if (task) {
     task.status = 'open';
     task.claimedBy = '';
+    task.claimedAt = '';
     setTaskBusy(id, true);
     render();
   }
   setStatus('Removing claim...');
   try{
     await call('', 'POST', {action:'unclaim', id, employee: state.me.trim()});
+    addAuditLog('target_released', task && task.targetId, task && task.targetName);
     setStatus('Claim removed.');
     setTaskBusy(id, false);
     refresh();
@@ -720,7 +918,7 @@ async function submitSpy(id){
     setTaskBusy(id, true);
     render();
     restoreTaskPaste(id, raw);
-    updateClaimPasteWarning(id);
+    updateSpyPreview(id);
 
     // 1) Del opp & parse alle blokker
     const blocks  = extractSpyBlocks(raw);
@@ -741,6 +939,8 @@ async function submitSpy(id){
     const task = state.tasks.find(t => String(t.id)===String(id)) || {};
     if(!p.name && task.targetName) p.name = task.targetName;
     if(!p.id   && task.targetId)   p.id   = task.targetId;
+    const corrected = readCorrectedSpy(id, parseSpyResult(raw));
+    p = completeStats(Object.assign({}, p, corrected));
     if (task.targetId && p.id && String(task.targetId) !== String(p.id)) {
       throw new Error('Parsed target ID ' + p.id + ' does not match claimed task ID ' + task.targetId + '.');
     }
@@ -760,7 +960,7 @@ async function submitSpy(id){
         setTaskBusy(id, false);
         render();
         restoreTaskPaste(id, raw);
-        updateClaimPasteWarning(id);
+        updateSpyPreview(id);
         setStatus('Submit cancelled. Partial spy was not submitted.');
         return;
       }
@@ -784,6 +984,7 @@ async function submitSpy(id){
     });
 
     ta.value='';
+    addAuditLog('spy_submitted', payload.targetId, payload.name);
     setStatus('Result submitted.');
     setTaskBusy(id, false);
     refresh();
@@ -791,7 +992,7 @@ async function submitSpy(id){
     setTaskBusy(id, false);
     render();
     restoreTaskPaste(id, raw);
-    updateClaimPasteWarning(id);
+    updateSpyPreview(id);
     const err = document.getElementById('err');
     if (err) err.textContent = 'Submit failed: ' + (e.message||e);
   }
@@ -813,15 +1014,19 @@ function parseImportTarget(line){
   if (!name) throw new Error('Missing target name.');
 
   if (trimmed.length === 1) {
-    return { targetName: name, targetId: '', notes: '' };
+    return { targetName: name, targetId: '', notes: '', priority: 'normal' };
   }
 
   const second = trimmed[1] || '';
   const hasNumericId = /^\d+$/.test(second);
   const targetId = hasNumericId ? second : '';
-  const notes = hasNumericId ? trimmed.slice(2).join(' | ').trim() : trimmed.slice(1).join(' | ').trim();
+  const rest = hasNumericId ? trimmed.slice(2) : trimmed.slice(1);
+  const last = rest[rest.length - 1] || '';
+  const priority = normalizePriority(last);
+  const noteParts = ['rush','high','normal','low'].includes(last.toLowerCase()) ? rest.slice(0, -1) : rest;
+  const notes = noteParts.join(' | ').trim();
 
-  return { targetName: name, targetId, notes };
+  return { targetName: name, targetId, notes, priority };
 }
 
 function cleanImportedName(name){
@@ -856,12 +1061,179 @@ function normalizeTargetName(name){
     .toLowerCase();
 }
 
+function normalizePriority(value){
+  const p = String(value || '').trim().toLowerCase();
+  return ['rush','high','normal','low'].includes(p) ? p : 'normal';
+}
+
+function parseDateValue(value){
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function getClaimedAt(target){
+  return parseDateValue(target.claimedAt || target.claimed_at || target.claimTime || target.claimedTime || target.updatedAt || target.updated_at);
+}
+
+function getSubmittedAt(target){
+  return parseDateValue(target.submittedAt || target.submitted_at || target.completedAt || target.completed_at || target.updatedAt || target.updated_at);
+}
+
+function minutesSince(date){
+  return date ? Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000)) : null;
+}
+
+function formatAge(date){
+  const mins = minutesSince(date);
+  if (mins == null) return '-';
+  if (mins < 60) return mins + ' min';
+  const hours = Math.floor(mins / 60);
+  const rest = mins % 60;
+  return hours + 'h' + (rest ? ' ' + rest + 'm' : '');
+}
+
+function isClaimStale(target){
+  return target.status === 'claimed' && minutesSince(getClaimedAt(target)) >= STALE_DANGER_MINUTES;
+}
+
+function isClaimWarning(target){
+  const mins = minutesSince(getClaimedAt(target));
+  return target.status === 'claimed' && mins != null && mins >= STALE_WARNING_MINUTES && mins < STALE_DANGER_MINUTES;
+}
+
+function getTargetStatus(target){
+  if (target.status === 'submitted') return 'submitted';
+  if (isClaimStale(target)) return 'stale';
+  if (target.status === 'claimed') return 'claimed';
+  return 'open';
+}
+
+function isSubmittedRecently(target){
+  const submittedAt = getSubmittedAt(target);
+  return submittedAt && (Date.now() - submittedAt.getTime()) < 24 * 60 * 60 * 1000;
+}
+
+function addAuditLog(action, targetId, details){
+  const entry = {
+    timestamp: new Date().toISOString(),
+    actor: state.me || 'unknown',
+    action,
+    targetId: targetId || '',
+    details: details || ''
+  };
+  state.auditLog.unshift(entry);
+  state.auditLog = state.auditLog.slice(0, 300);
+  localStorage.setItem(AUDIT_KEY, JSON.stringify(state.auditLog));
+}
+
 function setImportSummary(lines){
   const el = qs('#m-import-summary');
   if (!el) return;
   const list = Array.isArray(lines) ? lines.filter(Boolean) : [lines].filter(Boolean);
   el.hidden = list.length === 0;
   el.textContent = list.join('\n');
+}
+
+function targetIdentityKey(target){
+  return target && target.targetId ? 'id:' + String(target.targetId).trim() : 'name:' + normalizeTargetName(target && target.targetName);
+}
+
+function validateTargetImport(raw){
+  let parsed = [];
+  try{ parsed = extractImportTargets(raw); }catch(e){ return [{ status:'Invalid', targetId:'', targetName:'', notes:String(e.message || e), priority:'normal' }]; }
+  const existing = new Map(state.tasks.filter(t => t.targetId).map(t => [String(t.targetId), t]));
+  const seen = new Set();
+  return parsed.map(item => {
+    item.priority = normalizePriority(item.priority || item.notesPriority);
+    const id = String(item.targetId || '').trim();
+    const key = id || item.targetName.toLowerCase();
+    let status = 'New';
+    let note = item.notes || '';
+    if (!item.targetName || (id && !/^\d{3,}$/.test(id))) {
+      status = 'Invalid';
+      note = note || 'Missing name or invalid target ID.';
+    } else if (id && existing.has(id)) {
+      status = 'Duplicate';
+      note = note || 'Target ID already exists on the board.';
+    } else if (seen.has(key)) {
+      status = 'Duplicate';
+      note = note || 'Duplicate in this paste.';
+    } else if (id) {
+      const recentSubmitted = state.tasks.find(t => String(t.targetId || '') === id && t.status === 'submitted' && isSubmittedRecently(t));
+      if (recentSubmitted) {
+        status = 'Duplicate';
+        note = note || 'Target ID was submitted in the last 24h.';
+      }
+    }
+    seen.add(key);
+    return Object.assign({}, item, { status, notes: note });
+  });
+}
+
+function renderImportPreview(){
+  const el = qs('#m-import-preview');
+  if (!el) return;
+  if (!state.importPreview.length) {
+    el.hidden = true;
+    el.innerHTML = '';
+    return;
+  }
+  el.hidden = false;
+  el.innerHTML = `<table><thead><tr><th>Status</th><th>Target ID</th><th>Target name</th><th>Note</th><th>Priority</th></tr></thead><tbody>${
+    state.importPreview.map(item => `<tr><td><span class="pill ${item.status === 'New' ? 'status-submitted' : item.status === 'Duplicate' ? 'status-warning' : 'status-stale'}">${escapeHtml(item.status)}</span></td><td>${escapeHtml(item.targetId || '')}</td><td>${escapeHtml(item.targetName || '')}</td><td>${escapeHtml(item.notes || '')}</td><td>${escapeHtml(normalizePriority(item.priority).toUpperCase())}</td></tr>`).join('')
+  }</tbody></table>`;
+}
+
+function previewImportTargets(){
+  const raw = qs('#m-bulk') ? qs('#m-bulk').value : '';
+  state.importPreview = validateTargetImport(raw);
+  const counts = state.importPreview.reduce((acc,item)=>{ acc[item.status]=(acc[item.status]||0)+1; return acc; }, {});
+  setImportSummary([
+    'Preview ready.',
+    'New: ' + (counts.New || 0),
+    'Duplicate: ' + (counts.Duplicate || 0),
+    'Invalid: ' + (counts.Invalid || 0)
+  ]);
+  renderImportPreview();
+}
+
+function updateSpyPreview(id){
+  const ta = document.getElementById('paste-' + id);
+  const el = document.getElementById('spy-preview-' + id);
+  if (!ta || !el) return;
+  const parsed = parseSpyResult(ta.value || '');
+  if (!parsed.rawText.trim()) {
+    el.innerHTML = '';
+    return;
+  }
+  const warnings = parsed.warnings.length ? `<div class="warning-box">${parsed.warnings.map(escapeHtml).join('<br>')}</div>` : '<div class="muted" style="margin-top:8px">Spy parser looks good.</div>';
+  el.innerHTML = `
+    ${warnings}
+    <div class="preview-grid">
+      <label>Name<input id="spy-name-${id}" value="${escapeHtml(parsed.targetName)}"></label>
+      <label>ID<input id="spy-id-${id}" value="${escapeHtml(parsed.targetId)}"></label>
+      <label>Strength<input id="spy-strength-${id}" value="${escapeHtml(parsed.strength ?? '')}"></label>
+      <label>Defense<input id="spy-defense-${id}" value="${escapeHtml(parsed.defense ?? '')}"></label>
+      <label>Speed<input id="spy-speed-${id}" value="${escapeHtml(parsed.speed ?? '')}"></label>
+      <label>Dexterity<input id="spy-dexterity-${id}" value="${escapeHtml(parsed.dexterity ?? '')}"></label>
+      <label>Total<input id="spy-total-${id}" value="${escapeHtml(parsed.total ?? '')}"></label>
+    </div>`;
+}
+
+function readCorrectedSpy(id, fallback){
+  const get = key => document.getElementById('spy-' + key + '-' + id);
+  return {
+    name: (get('name')?.value || fallback.targetName || '').trim(),
+    id: (get('id')?.value || fallback.targetId || '').trim(),
+    strength: parseNumberToken(get('strength')?.value),
+    defense: parseNumberToken(get('defense')?.value),
+    speed: parseNumberToken(get('speed')?.value),
+    dexterity: parseNumberToken(get('dexterity')?.value),
+    total: parseNumberToken(get('total')?.value),
+    level: fallback.level ?? null
+  };
 }
 
 function delay(ms){
@@ -876,10 +1248,14 @@ function extractImportTargets(raw){
     const cleaned = cleanImportedName(targetName);
     if (!isLikelyTargetName(cleaned)) return;
     if (!/^\d{3,}$/.test(String(targetId || '').trim())) return;
+    const parts = String(notes || '').split('|').map(part => part.trim()).filter(Boolean);
+    const last = parts[parts.length - 1] || '';
+    const priority = normalizePriority(last);
     found.push({
       targetName: cleaned,
       targetId: String(targetId).trim(),
-      notes: notes.trim()
+      notes: ['rush','high','normal','low'].includes(last.toLowerCase()) ? parts.slice(0, -1).join(' | ') : notes.trim(),
+      priority
     });
   };
 
@@ -887,13 +1263,13 @@ function extractImportTargets(raw){
     const line = lines[i];
     if (!line) continue;
 
-    const bracketMatch = line.match(/^\s*([^\[\]\n]+?)\s*\[(\d{3,})\]\b(.*)$/i);
+    const bracketMatch = line.match(/^\s*([^\[\]\n]+?)\s*\[(\d{3,})\](.*)$/i);
     if (bracketMatch) {
       pushFound(bracketMatch[1], bracketMatch[2], bracketMatch[3] || '');
       continue;
     }
 
-    const parenMatch = line.match(/^\s*([^(\\n]+?)\s*\((\d{3,})\)\b(.*)$/i);
+    const parenMatch = line.match(/^\s*([^(\n]+?)\s*\((\d{3,})\)(.*)$/i);
     if (parenMatch) {
       pushFound(parenMatch[1], parenMatch[2], parenMatch[3] || '');
       continue;
@@ -930,49 +1306,24 @@ async function importTargets(){
     return;
   }
 
-  const parsed = [];
-  const parseErrors = [];
-  try{
-    parsed.push(...extractImportTargets(raw));
-  }catch(e){
-    parseErrors.push(String(e.message || e));
-  }
-
-  if (parseErrors.length) {
-    setStatus('Import blocked: ' + parseErrors[0]);
-    setImportSummary(['Import blocked', parseErrors[0]]);
-    return;
-  }
-
-  if (!parsed.length) {
+  if (!state.importPreview.length) previewImportTargets();
+  const unique = state.importPreview.filter(item => item.status === 'New');
+  if (!state.importPreview.length) {
     setStatus('Import blocked: no valid targets were found in the pasted text.');
     setImportSummary(['Import blocked', 'No valid targets were found in the pasted text.']);
     return;
   }
-
-  const seen = new Set();
-  const unique = [];
-  let skipped = 0;
-  parsed.forEach(item => {
-    const key = (item.targetId || '') + '|' + item.targetName.toLowerCase();
-    if (seen.has(key)) {
-      skipped += 1;
-      return;
-    }
-    seen.add(key);
-    unique.push(item);
-  });
-
-  setImportSummary([
-    'Detected ' + parsed.length + ' target line(s).',
-    'Prepared ' + unique.length + ' unique target(s) for import.' + (skipped ? ' Skipping ' + skipped + ' duplicate line(s).' : '')
-  ]);
+  if (!unique.length) {
+    setStatus('Import blocked: preview has no New targets.');
+    return;
+  }
 
   let added = 0;
   const failed = [];
   for (const item of unique) {
     try{
-      await call('', 'POST', { action:'add', targetName:item.targetName, targetId:item.targetId, notes:item.notes });
+      await call('', 'POST', { action:'add', targetName:item.targetName, targetId:item.targetId, notes:item.notes, priority:item.priority });
+      addAuditLog('target_added', item.targetId, item.targetName);
       added += 1;
       await delay(120);
     }catch(e){
@@ -984,17 +1335,16 @@ async function importTargets(){
   await refresh();
 
   const parts = ['Imported ' + added + ' target(s).'];
-  if (skipped) parts.push('Skipped ' + skipped + ' duplicate line(s).');
   if (failed.length) parts.push('Failed ' + failed.length + ' target(s): ' + failed[0]);
   setStatus(parts.join(' '));
   setImportSummary([
-    'Detected ' + parsed.length + ' target line(s).',
     'Prepared ' + unique.length + ' unique target(s).',
     'Imported ' + added + ' target(s).',
-    skipped ? 'Skipped ' + skipped + ' duplicate line(s).' : '',
     failed.length ? 'Failed ' + failed.length + ' target(s).' : 'Imported all prepared targets successfully.',
     failed.length ? failed.slice(0, 8).join('\n') : ''
   ]);
+  state.importPreview = failed.length ? state.importPreview : [];
+  renderImportPreview();
 }
 
 
@@ -1002,9 +1352,15 @@ async function addTask(){
   const name=(qs('#m-name').value||'').trim();
   const tid=(qs('#m-id').value||'').trim();
   const notes=(qs('#m-notes').value||'').trim();
+  const priority=normalizePriority(qs('#m-priority')?.value);
   if(!name){ alert('Please enter a target name'); return; }
+  if(tid && state.tasks.some(t => String(t.targetId || '') === tid)){
+    setStatus('Add blocked: target ID already exists on the board.');
+    return;
+  }
   try{
-    await call('', 'POST', {action:'add', targetName:name, targetId:tid, notes});
+    await call('', 'POST', {action:'add', targetName:name, targetId:tid, notes, priority});
+    addAuditLog('target_added', tid, name);
     qs('#m-name').value=''; qs('#m-id').value=''; qs('#m-notes').value=''; await refresh();
   }catch(e){ setStatus('Add failed: '+String(e.message||e)); }
 }
@@ -1026,13 +1382,48 @@ function formatSubmittedList(tasks){
   return blocks.join('\n\n\n');
 }
 
+function getVisibleSubmitted(){
+  const now = Date.now();
+  const today = new Date(); today.setHours(0,0,0,0);
+  return state.tasks.filter(t => {
+    if (t.status !== 'submitted') return false;
+    const submittedAt = getSubmittedAt(t);
+    if (state.filters.recent === 'all') return true;
+    if (state.filters.recent === '24h') return submittedAt && now - submittedAt.getTime() <= 24 * 60 * 60 * 1000;
+    return submittedAt && submittedAt >= today;
+  });
+}
+
+function copySubmittedResults(format){
+  const tasks = getVisibleSubmitted();
+  if (format === 'discord') {
+    return tasks.map(t => '**' + (t.targetName || 'Unknown') + (t.targetId ? ' [' + t.targetId + ']' : '') + '**\n```' + ((t.formatted || (t.payload && t.payload.formatted) || '').trim()) + '\n```').join('\n\n');
+  }
+  if (format === 'plain') {
+    return tasks.map(t => (t.targetName || 'Unknown') + (t.targetId ? ' [' + t.targetId + ']' : '') + '\n' + ((t.formatted || (t.payload && t.payload.formatted) || '').trim())).join('\n\n');
+  }
+  return formatSubmittedList(tasks);
+}
+
+async function copyTarget(target){
+  const text = (target.targetName || 'Unknown') + (target.targetId ? ' [' + target.targetId + ']' : '') + (target.notes ? ' - ' + target.notes : '');
+  await navigator.clipboard.writeText(text);
+  setStatus('Target copied.');
+}
+
 
 // ===== Events =====
 (function bind(){
   const saveBtn=qs('#save');   if(saveBtn) saveBtn.addEventListener('click',()=>{ saveSettings(); refresh(); });
   const refBtn =qs('#refresh');if(refBtn)  refBtn.addEventListener('click',()=>{ refresh(); });
   const addBtn =qs('#m-add');  if(addBtn)  addBtn.addEventListener('click',addTask);
+  const previewImportBtn=qs('#m-preview-import'); if(previewImportBtn) previewImportBtn.addEventListener('click',previewImportTargets);
   const importBtn=qs('#m-import'); if(importBtn) importBtn.addEventListener('click',importTargets);
+  const search=qs('#target-search'); if(search) search.addEventListener('input',()=>{ state.filters.search=search.value; renderTargets(); });
+  const statusFilter=qs('#status-filter'); if(statusFilter) statusFilter.addEventListener('change',()=>{ state.filters.status=statusFilter.value; renderTargets(); });
+  const priorityFilter=qs('#priority-filter'); if(priorityFilter) priorityFilter.addEventListener('change',()=>{ state.filters.priority=priorityFilter.value; renderTargets(); });
+  const recentFilter=qs('#recent-filter'); if(recentFilter) recentFilter.addEventListener('change',()=>{ state.filters.recent=recentFilter.value; renderRecentlySubmitted(); });
+  const copyFormat=qs('#copy-format'); if(copyFormat) copyFormat.addEventListener('change',()=>{ state.filters.copyFormat=copyFormat.value; });
 
   const pasteEl = document.getElementById('paste');
   const previewEl = document.getElementById('preview');
@@ -1055,10 +1446,10 @@ function formatSubmittedList(tasks){
   if (copyAllBtn){
     copyAllBtn.addEventListener('click', async ()=>{
       try{
-        const text = formatSubmittedList(state.tasks);
+        const text = copySubmittedResults(state.filters.copyFormat);
         await navigator.clipboard.writeText(text);
         const err = document.getElementById('err');
-        if (err) err.textContent = 'Copied all submitted to clipboard.';
+        if (err) err.textContent = 'Copied visible submitted results to clipboard.';
       }catch(e){
         const err = document.getElementById('err');
         if (err) err.textContent = 'Copy failed: ' + (e.message||e);
