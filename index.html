@@ -1872,10 +1872,11 @@ function extractImportTargets(raw){
 async function importTargets(){
   const bulkEl = qs('#m-bulk');
   const raw = bulkEl ? bulkEl.value : '';
-  if (!String(raw || '').trim()) {
-    alert('Paste one or more targets to import.');
-    return;
-  }
+  try{
+    if (!String(raw || '').trim()) {
+      alert('Paste one or more targets to import.');
+      return;
+    }
 
   if (!state.importPreview.length) previewImportTargets();
   const unique = state.importPreview.filter(item => item.status === 'New');
@@ -1891,7 +1892,17 @@ async function importTargets(){
 
   let added = 0;
   const failed = [];
-  for (const item of unique) {
+  try{
+    const result = await call('', 'POST', { action:'bulkAdd', targets:unique, employee:state.me.trim() });
+    added = Number(result.added || unique.length);
+    unique.forEach(item => addAuditLog('target_added', item.targetId, item.targetName));
+  }catch(batchError){
+    if (String(batchError.message || batchError).includes('NetworkError')) {
+      throw new Error('NetworkError while contacting Apps Script. Check that DEFAULT_API points to the deployed Web App URL, the deployment is updated, and access is set to allow web app execution.');
+    }
+    failed.push('Batch import failed, trying one-by-one: ' + String(batchError.message || batchError));
+  }
+  for (const item of failed.length ? unique : []) {
     try{
       await call('', 'POST', { action:'add', targetName:item.targetName, targetId:item.targetId, notes:item.notes, priority:item.priority, orderId:item.orderId, customer:item.customer, pricePerSpy:item.pricePerSpy, employeeRate:item.employeeRate });
       addAuditLog('target_added', item.targetId, item.targetName);
@@ -1916,6 +1927,14 @@ async function importTargets(){
   ]);
   state.importPreview = failed.length ? state.importPreview : [];
   renderImportPreview();
+  }catch(e){
+    setStatus('Import failed: ' + String(e.message || e));
+    setImportSummary([
+      'Import failed before any target was added.',
+      String(e.message || e),
+      'If this is a NetworkError, the browser could not reach the deployed Apps Script web app.'
+    ]);
+  }
 }
 
 

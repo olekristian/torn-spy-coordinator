@@ -50,6 +50,7 @@ function handleRequest(e, method) {
 function dispatch_(action, input) {
   if (action === 'list') return list_();
   if (action === 'add') return addTarget_(input);
+  if (action === 'bulkAdd') return bulkAddTargets_(input);
   if (action === 'claim') return claimTarget_(input);
   if (action === 'unclaim') return unclaimTarget_(input);
   if (action === 'submit') return submitSpy_(input);
@@ -123,6 +124,45 @@ function addTarget_(input) {
   upsertOrderFromTarget_(row);
   addAudit_(input.employee || input.actor || '', 'target_added', row.targetId, row.targetName);
   return { ok:true, id };
+}
+
+function bulkAddTargets_(input) {
+  const items = Array.isArray(input.targets) ? input.targets : [];
+  if (!items.length) return { ok:true, added:0, ids:[] };
+  const now = now_();
+  const ids = [];
+  const rows = items.map(item => {
+    const id = uid_('target');
+    ids.push(id);
+    return {
+      id,
+      targetName: item.targetName || item.name || '',
+      targetId: item.targetId || '',
+      notes: item.notes || '',
+      priority: item.priority || 'normal',
+      status: 'open',
+      claimedBy: '',
+      claimedAt: '',
+      submittedAt: '',
+      reviewStatus: '',
+      assignedTo: item.assignedTo || '',
+      assignedAt: item.assignedTo ? now : '',
+      orderId: item.orderId || '',
+      customer: item.customer || '',
+      pricePerSpy: item.pricePerSpy || '',
+      employeeRate: item.employeeRate || '',
+      customerPaymentStatus: item.customerPaymentStatus || 'unpaid',
+      employeePayoutStatus: item.employeePayoutStatus || 'unpaid',
+      createdAt: now,
+      updatedAt: now,
+    };
+  });
+  appendObjects_(SHEETS.targets, rows);
+  rows.forEach(row => {
+    upsertOrderFromTarget_(row);
+    addAudit_(input.employee || input.actor || '', 'target_added', row.targetId, row.targetName);
+  });
+  return { ok:true, added:rows.length, ids };
 }
 
 function claimTarget_(input) {
@@ -410,6 +450,14 @@ function appendObject_(name, obj) {
   const s = sheet_(name);
   const headers = HEADERS[name] || s.getRange(1, 1, 1, s.getLastColumn()).getValues()[0];
   s.appendRow(headers.map(h => obj[h] == null ? '' : obj[h]));
+}
+
+function appendObjects_(name, objects) {
+  if (!objects.length) return;
+  const s = sheet_(name);
+  const headers = HEADERS[name] || s.getRange(1, 1, 1, s.getLastColumn()).getValues()[0];
+  const values = objects.map(obj => headers.map(h => obj[h] == null ? '' : obj[h]));
+  s.getRange(s.getLastRow() + 1, 1, values.length, headers.length).setValues(values);
 }
 
 function writeObjectAtRow_(sheet, rowNumber, obj) {
