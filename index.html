@@ -6,72 +6,88 @@
 <title>Bring Em Closer � Stat Spy Coordinator</title>
 <style>
 :root {
-  --bg: #0f1a13;
-  --card: #132318;
-  --muted: #9fb3a7;
+  --bg: #08110d;
+  --card: rgba(19,35,24,.88);
+  --card-strong: #132318;
+  --line: rgba(116, 168, 134, .18);
+  --muted: #a8c3b2;
   --text: #e8f5ee;
   --accent: #22c55e;
   --good: #22c55e;
   --warn: #fbbf24;
   --danger: #ef4444;
+  --blue: #60a5fa;
 }
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  background: var(--bg);
+  background:
+    radial-gradient(circle at top left, rgba(34,197,94,.18), transparent 34rem),
+    radial-gradient(circle at 80% 10%, rgba(96,165,250,.10), transparent 28rem),
+    linear-gradient(135deg, #07100c 0%, #0d1a12 48%, #08110d 100%);
   color: var(--text);
   font: 14px/1.4 system-ui, Segoe UI, Roboto, Helvetica, Arial;
+  min-height: 100vh;
 }
-.wrap { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
-h1 { font-size: 26px; margin: 0 0 8px; }
+.wrap { max-width: 1180px; margin: 24px auto; padding: 0 16px; }
+h1 { font-size: clamp(28px, 4vw, 42px); margin: 0 0 6px; letter-spacing: -.04em; }
 .sub { color: var(--muted); margin: 0 0 16px; }
 .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 6px 0 18px; }
 input, textarea, button, select { font: inherit; }
 input, textarea, select {
-  background: #0e1626;
-  border: 1px solid #22314f;
+  background: rgba(8,17,13,.78);
+  border: 1px solid var(--line);
   color: var(--text);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 10px 12px;
+  outline: none;
+}
+input:focus, textarea:focus, select:focus {
+  border-color: rgba(34,197,94,.75);
+  box-shadow: 0 0 0 3px rgba(34,197,94,.13);
 }
 textarea { width: 100%; min-height: 140px; resize: vertical; }
 button {
-  background: #1b2640;
-  color: #eaf2ff;
-  border: 1px solid #2a3a63;
+  background: linear-gradient(180deg, rgba(34,197,94,.22), rgba(20,83,45,.9));
+  color: #f1fff7;
+  border: 1px solid rgba(74,222,128,.35);
   padding: 10px 14px;
   border-radius: 10px;
   cursor: pointer;
   min-height: 42px;
+  font-weight: 700;
+  transition: transform .12s ease, border-color .12s ease, background .12s ease;
 }
-button:hover { border-color: #3a5499; }
+button:hover { border-color: rgba(134,239,172,.8); transform: translateY(-1px); }
+button:disabled { opacity: .55; cursor: not-allowed; transform: none; }
 .tabs { display: flex; gap: 6px; margin: 0 0 14px; flex-wrap: wrap; }
 .tab {
   padding: 8px 12px;
-  border: 1px solid #22314f;
+  border: 1px solid var(--line);
   border-radius: 999px;
-  background: #0e1626;
-  color: #cfe0ff;
+  background: rgba(8,17,13,.72);
+  color: #d8f7e4;
 }
-.tab.active { background: #203058; border-color: #3d5591; }
+.tab.active { background: rgba(34,197,94,.18); border-color: rgba(74,222,128,.65); }
 .grid { display: grid; gap: 12px; }
 @media (min-width: 800px) {
   .grid.cards { grid-template-columns: repeat(3, 1fr); }
 }
 .card {
   background: var(--card);
-  border: 1px solid #1a2744;
-  border-radius: 16px;
-  box-shadow: 0 3px 16px rgba(0,0,0,.25);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: 0 18px 55px rgba(0,0,0,.28);
+  backdrop-filter: blur(12px);
 }
-.card .hd { padding: 14px 14px 0; font-weight: 600; }
-.card .bd { padding: 14px; }
+.card .hd { padding: 16px 16px 0; font-weight: 800; letter-spacing: -.01em; }
+.card .bd { padding: 16px; }
 .muted { color: var(--muted); }
 .warn-text { color: var(--warn); }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.top-controls { position: sticky; top: 0; z-index: 3; background: linear-gradient(180deg, var(--bg) 80%, rgba(15,26,19,0)); padding-top: 8px; }
+.top-controls { position: sticky; top: 0; z-index: 3; background: linear-gradient(180deg, rgba(8,17,13,.98) 78%, rgba(8,17,13,0)); padding-top: 8px; padding-bottom: 8px; }
 .dashboard { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 8px; margin-bottom: 12px; }
-.dash-card { background:#0e1626; border:1px solid #22314f; border-radius:14px; padding:10px 12px; }
+.dash-card { background:linear-gradient(180deg, rgba(14,22,38,.9), rgba(8,17,13,.85)); border:1px solid var(--line); border-radius:16px; padding:12px 14px; }
 .dash-card .label { color: var(--muted); font-size: 12px; }
 .dash-card .value { font-size: 20px; font-weight: 700; margin-top: 2px; }
 .filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
@@ -120,6 +136,10 @@ th { color:var(--muted); font-size:12px; }
   padding: 10px;
 }
 .divider { height: 1px; background: #1a2744; margin: 8px 0; }
+.progress-wrap { border:1px solid var(--line); background:rgba(8,17,13,.78); border-radius:14px; padding:10px; }
+.progress-bar { height:12px; background:#0b1410; border-radius:999px; overflow:hidden; border:1px solid rgba(255,255,255,.06); }
+.progress-fill { height:100%; width:0%; background:linear-gradient(90deg, var(--accent), var(--blue)); transition:width .18s ease; }
+.progress-meta { display:flex; justify-content:space-between; gap:8px; margin-top:8px; color:var(--muted); font-size:12px; flex-wrap:wrap; }
 @media (max-width: 760px) {
   .wrap { margin: 10px auto; padding: 0 10px; }
   .dashboard { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -347,6 +367,13 @@ th { color:var(--muted); font-size:12px; }
           <div class="muted">Blank lines are ignored. Target ID and notes are optional.</div>
         </div>
         <div id="m-import-summary" class="mono" hidden></div>
+        <div id="m-import-progress" class="progress-wrap" hidden>
+          <div class="progress-bar"><div id="m-import-progress-fill" class="progress-fill"></div></div>
+          <div class="progress-meta">
+            <span id="m-import-progress-label">Ready</span>
+            <span id="m-import-progress-count">0 / 0</span>
+          </div>
+        </div>
         <div id="m-import-preview" class="table-wrap" hidden></div>
       </div></div>
     </section>
@@ -1711,6 +1738,26 @@ function setImportSummary(lines){
   el.textContent = list.join('\n');
 }
 
+function setImportProgress(done, total, label){
+  const box = qs('#m-import-progress');
+  const fill = qs('#m-import-progress-fill');
+  const labelEl = qs('#m-import-progress-label');
+  const countEl = qs('#m-import-progress-count');
+  if (!box || !fill || !labelEl || !countEl) return;
+  const safeTotal = Math.max(0, Number(total || 0));
+  const safeDone = Math.max(0, Math.min(Number(done || 0), safeTotal || Number(done || 0)));
+  box.hidden = false;
+  fill.style.width = (safeTotal ? Math.round((safeDone / safeTotal) * 100) : 0) + '%';
+  labelEl.textContent = label || 'Working...';
+  countEl.textContent = safeDone + ' / ' + safeTotal;
+}
+
+function resetImportProgress(){
+  const box = qs('#m-import-progress');
+  if (box) box.hidden = true;
+  setImportProgress(0, 0, 'Ready');
+}
+
 function targetIdentityKey(target){
   return target && target.targetId ? 'id:' + String(target.targetId).trim() : 'name:' + normalizeTargetName(target && target.targetName);
 }
@@ -1780,6 +1827,7 @@ function renderImportPreview(){
 
 function previewImportTargets(){
   const raw = qs('#m-bulk') ? qs('#m-bulk').value : '';
+  resetImportProgress();
   state.importPreview = validateTargetImport(raw);
   const counts = state.importPreview.reduce((acc,item)=>{ acc[item.status]=(acc[item.status]||0)+1; return acc; }, {});
   setImportSummary([
@@ -1917,24 +1965,29 @@ async function importTargets(){
 
   let added = 0;
   const failed = [];
+  setImportProgress(0, unique.length, 'Sending batch to Google Sheet...');
   try{
     const result = await call('', 'POST', { action:'bulkAdd', targets:unique, employee:state.me.trim() });
     added = Number(result.added || unique.length);
     unique.forEach(item => addAuditLog('target_added', item.targetId, item.targetName));
+    setImportProgress(added, unique.length, 'Batch import complete.');
   }catch(batchError){
     if (String(batchError.message || batchError).includes('NetworkError')) {
       throw new Error('NetworkError while contacting Apps Script. Check that DEFAULT_API points to the deployed Web App URL, the deployment is updated, and access is set to allow web app execution.');
     }
     failed.push('Batch import failed, trying one-by-one: ' + String(batchError.message || batchError));
+    setImportProgress(0, unique.length, 'Batch failed. Importing one by one...');
   }
   for (const item of failed.length ? unique : []) {
     try{
       await call('', 'POST', { action:'add', targetName:item.targetName, targetId:item.targetId, notes:item.notes, priority:item.priority, orderId:item.orderId, customer:item.customer, pricePerSpy:item.pricePerSpy, employeeRate:item.employeeRate });
       addAuditLog('target_added', item.targetId, item.targetName);
       added += 1;
+      setImportProgress(added, unique.length, 'Imported ' + item.targetName);
       await delay(120);
     }catch(e){
       failed.push(item.targetName + ': ' + String(e.message || e));
+      setImportProgress(added, unique.length, 'Failed ' + item.targetName);
     }
   }
 
@@ -1954,6 +2007,7 @@ async function importTargets(){
   renderImportPreview();
   }catch(e){
     setStatus('Import failed: ' + String(e.message || e));
+    setImportProgress(0, 0, 'Import failed.');
     setImportSummary([
       'Import failed before any target was added.',
       String(e.message || e),
