@@ -450,7 +450,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
   </div>
 
 <script>
-const DEFAULT_API = "https://script.google.com/macros/s/AKfycbzFuEnnOxfGmSU6ESwF7MKERfJ0aNjbTfqHvJo6zKj0Ahu5Jdhnq0sqYDETDZNTjR0N/exec";
+const DEFAULT_API = "https://script.google.com/macros/s/AKfycbwl9eXSleq17E0R8XecMjMkhFphwTAuGVc8EVvM7EGztiTpLJRb87H-ottNkuRkhjzQ/exec";
 const DEFAULT_KEY = "";
 const STALE_WARNING_MINUTES = 30;
 const STALE_DANGER_MINUTES = 60;
@@ -1618,7 +1618,8 @@ async function submitSpy(id){
       defense: p.defense,
       total: p.total,
       rawText: raw,
-      formatted: formatBlock(p)
+      formatted: formatBlock(p),
+      warnings: submitWarnings.concat(missing.length ? ['Missing: ' + missing.join(', ')] : [])
     };
 
     await call('', 'POST', {

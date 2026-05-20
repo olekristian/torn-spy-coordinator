@@ -200,6 +200,7 @@ function unclaimTarget_(input) {
 
 function submitSpy_(input) {
   const payload = input.payload || {};
+  const warnings = Array.isArray(payload.warnings) ? payload.warnings.join(' | ') : (payload.warnings || '');
   const now = now_();
   const target = getTargetById_(input.id);
   const submissionId = uid_('sub');
@@ -221,7 +222,7 @@ function submitSpy_(input) {
     reviewStatus: 'pending_review',
     reviewedBy: '',
     reviewedAt: '',
-    warnings: (payload.warnings || []).join ? payload.warnings.join(' | ') : (payload.warnings || ''),
+    warnings: warnings,
     updatedAt: now,
   });
   updateTarget_(input.id, row => {
