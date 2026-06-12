@@ -1030,6 +1030,11 @@ function parseNameId(raw){
   let m = t.match(/^\s*Name\s*[:\-]?\s*([^\n\r\[]+?)\s*(?:\[(\d{3,})\])?\s*$/im);
   if (m) return { name: (m[1]||'').trim(), id: m[2] || '' };
 
+  // API reports often arrive as key/value JSON flattened to text.
+  const apiId = t.match(/^\s*(?:target[_\s-]*id|player[_\s-]*id|user[_\s-]*id|target)\s*[:=]\s*(\d{3,})\s*$/im);
+  const apiName = t.match(/^\s*(?:target[_\s-]*name|player[_\s-]*name|user[_\s-]*name|name)\s*[:=]\s*([^\n\r]+?)\s*$/im);
+  if (apiId || apiName) return { name: apiName ? apiName[1].trim() : '', id: apiId ? apiId[1] : '' };
+
   // 2) Finn "[123]" og trekk navn fra samme linje (f�r [id]) eller linja over
   const idm = t.match(/\[(\d{3,})\]/);
   if (idm){
@@ -2912,16 +2917,16 @@ function getTornLogHours(){
 function stringifyTornLog(entry){
   const seen = new Set();
   const out = [];
-  const walk = (value) => {
+  const walk = (value, key) => {
     if (value == null) return;
     if (typeof value === 'string' || typeof value === 'number') {
-      out.push(String(value));
+      out.push(key ? key + ': ' + String(value) : String(value));
       return;
     }
     if (typeof value !== 'object' || seen.has(value)) return;
     seen.add(value);
-    if (Array.isArray(value)) value.forEach(walk);
-    else Object.values(value).forEach(walk);
+    if (Array.isArray(value)) value.forEach((item, index) => walk(item, key ? key + '[' + index + ']' : ''));
+    else Object.entries(value).forEach(([childKey, childValue]) => walk(childValue, childKey));
   };
   walk(entry);
   return out.join('\n');
@@ -2986,20 +2991,29 @@ async function fetchRecentSpyLogs(hours){
 async function fetchRecentSpyReports(hours){
   if (!ensureTornPrivacyAcknowledged()) return [];
   const from = Math.floor((Date.now() - (Number(hours || getTornLogHours()) * 60 * 60 * 1000)) / 1000);
-  try{
-    const data = await fetchTornEndpoint('/v2/user/reports', {
-      from,
-      timestamp: Date.now()
-    });
-    return normalizeTornReports(data);
-  }catch(v2Error){
-    const fallback = await fetchTornEndpoint('/user/', {
-      selections:'reports',
-      from,
-      timestamp: Date.now()
-    });
-    return normalizeTornReports(fallback);
+  const attempts = [
+    ['/v2/user/reports', { from, timestamp: Date.now() }],
+    ['/v2/user', { selections:'reports', from, timestamp: Date.now() }],
+    ['/user/', { selections:'reports', from, timestamp: Date.now() }]
+  ];
+  const errors = [];
+  for (const [path, params] of attempts) {
+    try{
+      const data = await fetchTornEndpoint(path, params);
+      const reports = normalizeTornReports(data);
+      state.torn.lastReportDebug = {
+        path,
+        count: reports.length,
+        responseKeys: data && typeof data === 'object' ? Object.keys(data).slice(0, 12) : [],
+        sampleKeys: reports[0] && typeof reports[0] === 'object' ? Object.keys(reports[0]).slice(0, 16) : []
+      };
+      return reports;
+    }catch(e){
+      errors.push(path + ': ' + (e.message || e));
+    }
   }
+  state.torn.lastReportDebug = { path:'none', count:0, errors };
+  throw new Error('Could not fetch Torn reports. ' + errors.join(' | '));
 }
 
 async function findSpyFromLogs(id, submitAfterFind){
@@ -3011,11 +3025,14 @@ async function findSpyFromLogs(id, submitAfterFind){
   try{
     const hours = getTornLogHours();
     const reports = await fetchRecentSpyReports(hours);
+    const debug = state.torn.lastReportDebug || {};
+    setTornApiStatus('Fetched ' + (debug.count ?? reports.length) + ' Torn report(s) from ' + (debug.path || 'reports') + '.', reports.length ? 'good' : 'warn');
     const match = findSpyReportForTarget(reports, task);
     setTaskBusy(id, false);
     render();
     if (!match) {
-      setStatus('No matching spy report found in recent Torn reports.');
+      const sample = debug.sampleKeys && debug.sampleKeys.length ? ' Sample fields: ' + debug.sampleKeys.join(', ') + '.' : '';
+      setStatus('No matching spy report found in recent Torn reports. Fetched ' + reports.length + ' report(s).' + sample);
       return;
     }
     const ta = document.getElementById('paste-' + id);
@@ -3030,7 +3047,8 @@ async function findSpyFromLogs(id, submitAfterFind){
   }catch(e){
     setTaskBusy(id, false);
     render();
-    setStatus('Torn log lookup failed: ' + friendlyErrorMessage(e));
+    setTornApiStatus('Torn report lookup failed.', 'warn');
+    setStatus('Torn report lookup failed: ' + friendlyErrorMessage(e));
   }
 }
 
