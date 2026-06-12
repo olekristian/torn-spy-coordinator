@@ -26,7 +26,7 @@ const HEADERS = {
   Orders: ['orderId','customer','requestedBy','orderedAt','targetCount','pricePerSpy','totalPrice','paymentStatus','employeePayoutStatus','newOrderNotifiedAt','newOrderNotificationStatus','completedAt','completionNotifiedAt','completionNotificationStatus','notes','createdAt','updatedAt'],
   Customers: ['customer','contact','notes','createdAt','updatedAt'],
   Employees: ['displayName','payoutHandle','defaultRate','notes','createdAt','updatedAt'],
-  CustomerPayments: ['id','orderId','customer','amount','status','reference','note','recordedBy','recordedAt'],
+  CustomerPayments: ['id','orderId','customer','amount','status','reference','note','recordedBy','recordedAt','requestId','voidedAt','voidedBy','voidReason'],
   EmployeePayouts: ['id','submissionId','targetRowId','employee','targetId','amount','status','reference','note','recordedBy','recordedAt'],
   AuditLog: ['timestamp','actor','action','targetId','details'],
   DeliveryHistory: ['id','orderId','customer','targetName','targetId','deliveredBy','submittedAt','reviewStatus','level','formatted','rawText','archivedBy','archivedAt','notes'],
@@ -64,10 +64,13 @@ function dispatch_(action, input) {
   if (action === 'review') return reviewSubmission_(input);
   if (action === 'assign') return assignTarget_(input);
   if (action === 'customerPayment') return recordCustomerPayment_(input);
+  if (action === 'voidCustomerPayment') return voidCustomerPayment_(input);
   if (action === 'employeePayout') return recordEmployeePayout_(input);
   if (action === 'history') return archiveHistory_(input);
   if (action === 'verifyAdmin') return verifyAdmin_(input);
   if (action === 'webhookDebug') return webhookDebug_(input);
+  if (action === 'testDiscordWebhook') return testDiscordWebhook_(input);
+  if (action === 'setOrderPrice') return setOrderPrice_(input);
   if (action === 'sendNewOrderNotification') return sendNewOrderNotification_(input);
   if (action === 'sendOrderCompleteNotification') return sendOrderCompleteNotification_(input);
   if (action === 'audit') return addAudit_(input.actor || input.employee || 'system', input.auditAction || 'audit', input.targetId || '', input.details || '');
@@ -318,20 +321,51 @@ function assignTarget_(input) {
 
 function recordCustomerPayment_(input) {
   requireAdmin_(input);
+  const requestId = String(input.requestId || '').trim();
+  if (requestId) {
+    const existing = readObjects_(SHEETS.customerPayments).find(row => String(row.requestId || '') === requestId);
+    if (existing) return { ok:true, duplicate:true, paymentId:existing.id };
+  }
+  const amount = num_(input.amount);
+  if (!amount || amount < 0) throw new Error('A positive customer payment amount is required.');
+  const paymentId = uid_('custpay');
   appendObject_(SHEETS.customerPayments, {
-    id: uid_('custpay'),
+    id: paymentId,
     orderId: input.orderId || '',
     customer: input.customer || '',
-    amount: input.amount || '',
+    amount: amount,
     status: input.status || 'paid',
     reference: input.reference || '',
     note: input.note || '',
     recordedBy: input.employee || 'manager',
     recordedAt: now_(),
+    requestId: requestId,
+    voidedAt: '',
+    voidedBy: '',
+    voidReason: '',
   });
   updateOrderPayment_(input.orderId, input.status || 'paid');
   addAudit_(input.employee || 'manager', 'customer_payment_' + (input.status || 'paid'), input.orderId || '', input.customer || '');
-  return { ok:true };
+  return { ok:true, paymentId:paymentId, amount:amount };
+}
+
+function voidCustomerPayment_(input) {
+  requireAdmin_(input);
+  const paymentId = String(input.paymentId || '').trim();
+  if (!paymentId) throw new Error('paymentId is required.');
+  const row = readObjectsWithRows_(SHEETS.customerPayments).find(r => String(r.id || '') === paymentId);
+  if (!row) throw new Error('Customer payment not found.');
+  const actor = input.actor || input.employee || 'manager';
+  const reason = input.reason || 'voided by manager';
+  writeObjectAtRow_(sheet_(SHEETS.customerPayments), row._row, {
+    status: 'voided',
+    voidedAt: now_(),
+    voidedBy: actor,
+    voidReason: reason,
+  });
+  addAudit_(actor, 'customer_payment_voided', row.orderId || '', paymentId + ' | ' + reason);
+  recalculateOrderPaymentFromPayments_(row.orderId);
+  return { ok:true, paymentId:paymentId, status:'voided' };
 }
 
 function recordEmployeePayout_(input) {
@@ -399,6 +433,67 @@ function webhookDebug_(input) {
     managerKeysChecked: MANAGER_WEBHOOK_KEYS,
     employeeKeysChecked: EMPLOYEE_WEBHOOK_KEYS,
   };
+}
+
+function testDiscordWebhook_(input) {
+  requireAdmin_(input);
+  const kind = String(input.kind || '').toLowerCase() === 'employee' ? 'employee' : 'manager';
+  const keys = kind === 'employee' ? EMPLOYEE_WEBHOOK_KEYS : MANAGER_WEBHOOK_KEYS;
+  const webhookUrl = kind === 'employee' ? _employeeDiscordWebhookUrl() : _managerDiscordWebhookUrl();
+  const actor = input.actor || input.employee || 'manager';
+  if (!webhookUrl) {
+    addAudit_(actor, kind + '_webhook_test_missing', '', 'Checked: ' + keys.join(', '));
+    return {
+      ok:true,
+      notified:false,
+      status:'webhook_missing',
+      checkedKeys: keys,
+      foundKeys: _existingWebhookKeys_(keys),
+      debug: webhookDebug_(input),
+    };
+  }
+  postDiscord_(webhookUrl, 'Torn Spy Coordinator test: ' + kind + ' Discord webhook is configured.');
+  addAudit_(actor, kind + '_webhook_test_sent', '', 'Webhook test sent');
+  return {
+    ok:true,
+    notified:true,
+    status:'sent',
+    checkedKeys: keys,
+    foundKeys: _existingWebhookKeys_(keys),
+    debug: webhookDebug_(input),
+  };
+}
+
+function setOrderPrice_(input) {
+  requireAdmin_(input);
+  const orderId = String(input.orderId || '').trim();
+  if (!orderId) throw new Error('orderId is required.');
+  const amount = num_(input.amount);
+  if (!amount || amount < 0) throw new Error('A positive price amount is required.');
+  const targets = readObjectsWithRows_(SHEETS.targets).filter(r => String(r.orderId || '') === orderId);
+  if (!targets.length) throw new Error('Order has no targets.');
+  const mode = String(input.mode || 'perSpy').toLowerCase() === 'total' ? 'total' : 'perSpy';
+  const pricePerSpy = mode === 'total' ? amount / targets.length : amount;
+  const totalPrice = mode === 'total' ? amount : pricePerSpy * targets.length;
+  const now = now_();
+  const targetSheet = sheet_(SHEETS.targets);
+  targets.forEach(target => {
+    writeObjectAtRow_(targetSheet, target._row, {
+      pricePerSpy: pricePerSpy,
+      updatedAt: now,
+    });
+  });
+  const row = ensureOrderRow_(orderId);
+  if (row) {
+    writeObjectAtRow_(sheet_(SHEETS.orders), row._row, {
+      targetCount: targets.length,
+      pricePerSpy: pricePerSpy,
+      totalPrice: totalPrice,
+      updatedAt: now,
+    });
+  }
+  addAudit_(input.actor || input.employee || 'manager', 'order_price_set', orderId, mode + ': ' + amount);
+  return { ok:true, orderId:orderId, mode:mode, pricePerSpy:pricePerSpy, totalPrice:totalPrice, targetCount:targets.length };
 }
 
 function latestPayloadForTarget_(targetRowId) {
@@ -726,6 +821,19 @@ function updateOrderPayment_(orderId, status) {
   if (!orderId) return;
   const row = readObjectsWithRows_(SHEETS.orders).find(r => String(r.orderId) === String(orderId));
   if (row) writeObjectAtRow_(sheet_(SHEETS.orders), row._row, { paymentStatus: status, updatedAt: now_() });
+}
+
+function recalculateOrderPaymentFromPayments_(orderId) {
+  if (!orderId) return;
+  const row = readObjectsWithRows_(SHEETS.orders).find(r => String(r.orderId) === String(orderId));
+  if (!row) return;
+  const active = readObjects_(SHEETS.customerPayments)
+    .filter(payment => String(payment.orderId || '') === String(orderId))
+    .filter(payment => String(payment.status || '').toLowerCase() !== 'voided');
+  let status = 'unpaid';
+  if (active.some(payment => String(payment.status || '').toLowerCase() === 'paid')) status = 'paid';
+  else if (active.some(payment => String(payment.status || '').toLowerCase() === 'partial')) status = 'partial';
+  writeObjectAtRow_(sheet_(SHEETS.orders), row._row, { paymentStatus: status, updatedAt: now_() });
 }
 
 function updateTarget_(id, updater) {
