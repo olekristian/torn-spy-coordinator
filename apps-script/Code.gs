@@ -22,7 +22,7 @@ const SHEETS = {
 };
 
 const HEADERS = {
-  Targets: ['id','targetName','targetId','notes','priority','status','claimedBy','claimedAt','submittedAt','reviewStatus','assignedTo','assignedAt','orderId','customer','pricePerSpy','employeeRate','customerPaymentStatus','employeePayoutStatus','createdAt','updatedAt'],
+  Targets: ['id','targetName','targetId','level','notes','priority','status','claimedBy','claimedAt','submittedAt','reviewStatus','assignedTo','assignedAt','orderId','customer','pricePerSpy','employeeRate','customerPaymentStatus','employeePayoutStatus','createdAt','updatedAt'],
   Submissions: ['id','targetRowId','targetName','targetId','submittedBy','submittedAt','rawText','level','strength','speed','dexterity','defense','total','formatted','reviewStatus','reviewedBy','reviewedAt','warnings','updatedAt'],
   Orders: ['orderId','customer','requestedBy','orderedAt','targetCount','pricePerSpy','totalPrice','paymentStatus','employeePayoutStatus','newOrderNotifiedAt','newOrderNotificationStatus','completedAt','completionNotifiedAt','completionNotificationStatus','notes','createdAt','updatedAt'],
   Customers: ['customer','contact','notes','createdAt','updatedAt'],
@@ -95,6 +95,7 @@ function list_() {
     id: row.id,
     targetName: row.targetName,
     targetId: row.targetId,
+    level: numOrBlank_(row.level),
     notes: row.notes,
     priority: row.priority || 'normal',
     status: row.status || 'open',
@@ -130,6 +131,7 @@ function addTarget_(input) {
     id,
     targetName: input.targetName || input.name || '',
     targetId: input.targetId || '',
+    level: numOrBlank_(input.level),
     notes: input.notes || '',
     priority: input.priority || 'normal',
     status: 'open',
@@ -171,6 +173,7 @@ function bulkAddTargets_(input) {
       id,
       targetName: item.targetName || item.name || '',
       targetId: item.targetId || '',
+      level: numOrBlank_(item.level),
       notes: item.notes || '',
       priority: item.priority || 'normal',
       status: 'open',

@@ -2152,6 +2152,7 @@ async function submitSpy(id){
 function parseImportTarget(line){
   const raw = (line || '').trim();
   if (!raw) return null;
+  const level = parseImportLevel(raw);
 
   const parts = raw.includes('\t')
     ? raw.split('\t')
@@ -2164,7 +2165,7 @@ function parseImportTarget(line){
   if (!name) throw new Error('Missing target name.');
 
   if (trimmed.length === 1) {
-    return { targetName: name, targetId: '', notes: '', priority: 'normal' };
+    return { targetName: name, targetId: '', level, notes: '', priority: 'normal' };
   }
 
   const second = trimmed[1] || '';
@@ -2176,19 +2177,25 @@ function parseImportTarget(line){
   const noteParts = ['rush','high','normal','low'].includes(last.toLowerCase()) ? rest.slice(0, -1) : rest;
   const notes = noteParts.join(' | ').trim();
 
-  return { targetName: name, targetId, notes, priority };
+  return { targetName: name, targetId, level, notes, priority };
 }
 
 function parseSingleTargetInput(rawInput){
   const raw = String(rawInput || '').trim();
-  if (!raw) return { targetName:'', targetId:'' };
+  if (!raw) return { targetName:'', targetId:'', level:null };
+  const level = parseImportLevel(raw);
   const bracket = raw.match(/^\s*([^\[\]\n]+?)\s*\[(\d{3,})\]\s*$/i);
-  if (bracket) return { targetName: cleanImportedName(bracket[1]), targetId: bracket[2] };
+  if (bracket) return { targetName: cleanImportedName(bracket[1]), targetId: bracket[2], level };
   const paren = raw.match(/^\s*([^\(\)\n]+?)\s*\((\d{3,})\)\s*$/i);
-  if (paren) return { targetName: cleanImportedName(paren[1]), targetId: paren[2] };
+  if (paren) return { targetName: cleanImportedName(paren[1]), targetId: paren[2], level };
   const url = raw.match(/profiles\.php\?XID=(\d{3,})/i);
-  if (url) return { targetName: cleanImportedName(raw.replace(/https?:\/\/\S+/gi, '')), targetId: url[1] };
-  return { targetName: cleanImportedName(raw), targetId: '' };
+  if (url) return { targetName: cleanImportedName(raw.replace(/https?:\/\/\S+/gi, '')), targetId: url[1], level };
+  return { targetName: cleanImportedName(raw), targetId: '', level };
+}
+
+function parseImportLevel(raw){
+  const match = String(raw || '').match(/\b(?:lvl|level)\s*[:#-]?\s*(\d{1,3})\b/i);
+  return match ? Number(match[1]) : null;
 }
 
 function cleanImportedName(name){
@@ -2773,8 +2780,8 @@ function renderImportPreview(){
     return;
   }
   el.hidden = false;
-  el.innerHTML = `<table><thead><tr><th>Status</th><th>Target ID</th><th>Target name</th><th>Customer</th><th>Order</th><th>Note</th><th>Priority</th></tr></thead><tbody>${
-    state.importPreview.map(item => `<tr><td><span class="pill ${item.status === 'New' ? 'status-submitted' : item.status === 'Duplicate' ? 'status-warning' : 'status-stale'}">${escapeHtml(item.status)}</span></td><td>${escapeHtml(item.targetId || '')}</td><td>${escapeHtml(item.targetName || '')}</td><td>${escapeHtml(item.customer || '')}</td><td>${escapeHtml(item.orderId || '')}</td><td>${escapeHtml(item.notes || '')}</td><td>${escapeHtml(normalizePriority(item.priority).toUpperCase())}</td></tr>`).join('')
+  el.innerHTML = `<table><thead><tr><th>Status</th><th>Target ID</th><th>Target name</th><th>Level</th><th>Customer</th><th>Order</th><th>Note</th><th>Priority</th></tr></thead><tbody>${
+    state.importPreview.map(item => `<tr><td><span class="pill ${item.status === 'New' ? 'status-submitted' : item.status === 'Duplicate' ? 'status-warning' : 'status-stale'}">${escapeHtml(item.status)}</span></td><td>${escapeHtml(item.targetId || '')}</td><td>${escapeHtml(item.targetName || '')}</td><td>${escapeHtml(item.level ?? '')}</td><td>${escapeHtml(item.customer || '')}</td><td>${escapeHtml(item.orderId || '')}</td><td>${escapeHtml(item.notes || '')}</td><td>${escapeHtml(normalizePriority(item.priority).toUpperCase())}</td></tr>`).join('')
   }</tbody></table>`;
 }
 
@@ -2809,6 +2816,10 @@ function updateSpyPreview(id){
   if (!parsed.targetId && task.targetId) {
     parsed.targetId = task.targetId;
     parsed.warnings = parsed.warnings.filter(w => !/Target ID was not detected/i.test(w));
+  }
+  if (parsed.level == null && getTargetLevel(task) != null) {
+    parsed.level = getTargetLevel(task);
+    parsed.warnings = parsed.warnings.filter(w => !/Level is missing/i.test(w));
   }
   if (task.targetId && parsed.targetId && String(task.targetId) !== String(parsed.targetId)) parsed.warnings.push('Pasted target ID does not match this card.');
   if (task.targetId && state.tasks.some(t => t !== task && t.status === 'submitted' && String(t.targetId || '') === String(task.targetId) && state.reviews[taskKey(t)]?.status === 'approved')) parsed.warnings.push('This target already has an approved result.');
@@ -2961,6 +2972,10 @@ function normalizeReportKey(key){
   return String(key || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
+function getTargetLevel(target){
+  return parseNumberToken(target && (target.level ?? target.targetLevel ?? target.lvl ?? target.notesLevel));
+}
+
 function findReportField(entry, aliases){
   const wanted = new Set(aliases.map(normalizeReportKey));
   const seen = new Set();
@@ -2994,7 +3009,7 @@ function normalizeTornSpyReport(entry){
   const p = completeStats({
     id: String(pickNum(['target_id','targetid','target']) || ''),
     name: pickText(['target_name','targetname','player_name','playername']),
-    level: pickNum(['level','target_level','targetlevel']),
+    level: pickNum(['level','target_level','targetlevel','player_level','playerlevel','user_level','userlevel','lvl']),
     strength: pickNum(['strength','str']),
     speed: pickNum(['speed','spd']),
     dexterity: pickNum(['dexterity','dex']),
@@ -3036,7 +3051,7 @@ function mergeTornSpyReportsForTarget(entries, target){
       return idMatches || nameMatches;
     });
   if (!matching.length) return null;
-  const merged = { id: targetId || matching[0].normalized.id || '', name: target.targetName || matching[0].normalized.name || '', level: null, strength: null, speed: null, dexterity: null, defense: null, total: null };
+  const merged = { id: targetId || matching[0].normalized.id || '', name: target.targetName || matching[0].normalized.name || '', level: getTargetLevel(target), strength: null, speed: null, dexterity: null, defense: null, total: null };
   const sources = [];
   matching.forEach(row => {
     const p = row.normalized;
@@ -3094,6 +3109,7 @@ function findSpyReportForTarget(entries, target){
       level: normalized.level,
       rawText: text
     });
+    if (parsed.level == null) parsed.level = getTargetLevel(target);
     if (!normalized.hasStats && !looksLikeSpyResultText(text, parsed)) return null;
     let identityScore = 0;
     let spyScore = 0;
@@ -3228,12 +3244,14 @@ function extractImportTargets(raw){
     const cleaned = cleanImportedName(targetName);
     if (!isLikelyTargetName(cleaned)) return;
     if (!/^\d{3,}$/.test(String(targetId || '').trim())) return;
+    const level = parseImportLevel([targetName, notes].join(' '));
     const parts = String(notes || '').split('|').map(part => part.trim()).filter(Boolean);
     const last = parts[parts.length - 1] || '';
     const priority = normalizePriority(last);
     found.push({
       targetName: cleaned,
       targetId: String(targetId).trim(),
+      level,
       notes: ['rush','high','normal','low'].includes(last.toLowerCase()) ? parts.slice(0, -1).join(' | ') : notes.trim(),
       priority
     });
@@ -3317,7 +3335,7 @@ async function importTargets(){
   }
   for (const item of failed.length ? unique : []) {
     try{
-      await call('', 'POST', { action:'add', targetName:item.targetName, targetId:item.targetId, notes:item.notes, priority:item.priority, orderId:item.orderId, customer:item.customer, pricePerSpy:item.pricePerSpy, employeeRate:item.employeeRate, requireExistingOrder: !!qs('#m-existing-order-only')?.checked });
+      await call('', 'POST', { action:'add', targetName:item.targetName, targetId:item.targetId, level:item.level, notes:item.notes, priority:item.priority, orderId:item.orderId, customer:item.customer, pricePerSpy:item.pricePerSpy, employeeRate:item.employeeRate, requireExistingOrder: !!qs('#m-existing-order-only')?.checked });
       addAuditLog('target_added', item.targetId, item.targetName);
       added += 1;
       setImportProgress(added, unique.length, 'Imported ' + item.targetName);
@@ -3359,6 +3377,7 @@ async function addTask(){
   const parsedInput = parseSingleTargetInput((qs('#m-name')?.value || '').trim());
   const name=(parsedInput.targetName || '').trim();
   const tid=((qs('#m-id')?.value || parsedInput.targetId || '')).trim();
+  const level=parsedInput.level;
   const notes=(qs('#m-notes').value||'').trim();
   const priority=normalizePriority(qs('#m-priority')?.value);
   const orderId=(qs('#m-order')?.value||'').trim();
@@ -3380,7 +3399,7 @@ async function addTask(){
     return;
   }
   try{
-    const result = await call('', 'POST', {action:'add', targetName:name, targetId:tid, notes, priority, orderId, customer, pricePerSpy, employeeRate, requireExistingOrder});
+    const result = await call('', 'POST', {action:'add', targetName:name, targetId:tid, level, notes, priority, orderId, customer, pricePerSpy, employeeRate, requireExistingOrder});
     addAuditLog('target_added', tid, name);
     if (result && result.orderId) setStatus('Target added to order ' + result.orderId + '.');
     qs('#m-name').value=''; qs('#m-id').value=''; qs('#m-notes').value=''; await refresh();
