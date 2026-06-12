@@ -1,6 +1,7 @@
 function _props(){ return PropertiesService.getScriptProperties(); }
 function _apiKey(){ return _props().getProperty('API_KEY') || ''; }
 function _adminKey(){ return _props().getProperty('ADMIN_KEY') || ''; }
+const BACKEND_VERSION = '2026-06-12-finance-v2';
 const MANAGER_WEBHOOK_KEYS = ['MANAGER_DISCORD_WEBHOOK_URL','DISCORD_MANAGER_WEBHOOK_URL','MANAGER_WEBHOOK_URL','DISCORD_WEBHOOK_URL'];
 const EMPLOYEE_WEBHOOK_KEYS = ['EMPLOYEE_DISCORD_WEBHOOK_URL','DISCORD_EMPLOYEE_WEBHOOK_URL','EMPLOYEE_WEBHOOK_URL','DISCORD_WEBHOOK_URL'];
 function _firstProperty_(keys){ for (const key of keys){ const value = _props().getProperty(key); if (value) return value; } return ''; }
@@ -55,6 +56,7 @@ function handleRequest(e, method) {
 }
 
 function dispatch_(action, input) {
+  if (action === 'version') return version_();
   if (action === 'list') return list_();
   if (action === 'add') return addTarget_(input);
   if (action === 'bulkAdd') return bulkAddTargets_(input);
@@ -76,6 +78,15 @@ function dispatch_(action, input) {
   if (action === 'sendOrderCompleteNotification') return sendOrderCompleteNotification_(input);
   if (action === 'audit') return addAudit_(input.actor || input.employee || 'system', input.auditAction || 'audit', input.targetId || '', input.details || '');
   throw new Error('Unknown action: ' + action);
+}
+
+function version_() {
+  return {
+    ok: true,
+    version: BACKEND_VERSION,
+    checkedAt: now_(),
+    actions: ['version','list','customerPayment','voidCustomerPayment','employeePayout','voidEmployeePayout','setOrderPrice','webhookDebug','testDiscordWebhook','sendNewOrderNotification','sendOrderCompleteNotification']
+  };
 }
 
 function list_() {

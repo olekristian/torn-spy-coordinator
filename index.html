@@ -137,6 +137,48 @@ button.secondary, .tab, #theme-toggle { background: var(--surface); color: var(-
 }
 .setup-copy strong { color: var(--text); font-size: 15px; letter-spacing: -.01em; }
 .eyebrow { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.sr-only {
+  position:absolute;
+  width:1px;
+  height:1px;
+  padding:0;
+  margin:-1px;
+  overflow:hidden;
+  clip:rect(0,0,0,0);
+  white-space:nowrap;
+  border:0;
+}
+.setup-saved {
+  display:none;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+  color:var(--text-2);
+}
+.setup-saved strong { color:var(--text); }
+.manager-entry {
+  border:0;
+  margin-top:4px;
+  padding-top:0;
+}
+.manager-entry summary {
+  display:inline-flex;
+  width:auto;
+  font-size:12px;
+  border-bottom:1px solid var(--line);
+}
+.api-privacy {
+  border:1px solid var(--line);
+  border-radius:8px;
+  padding:8px 10px;
+  background:var(--surface-2);
+  color:var(--text-2);
+  font-size:12px;
+}
+.api-status {
+  min-height:18px;
+  font-size:12px;
+}
 .manager-login {
   border-top: 1px solid var(--line);
   margin-top: 8px;
@@ -152,8 +194,11 @@ button.secondary, .tab, #theme-toggle { background: var(--surface); color: var(-
 .manager-login .bar { margin-bottom: 0; }
 .manager-login:not([open]) > .bar { display:none; }
 .status-line { display:block; min-height: 22px; margin-top: 8px; }
-body.is-configured .setup-copy { display:none; }
+body.is-configured .setup-copy,
+body.is-configured .setup-primary { display:none; }
+body.is-configured .setup-saved { display:flex; }
 body.is-configured .setup-panel { padding: 10px 12px; }
+body:not(.has-access-code) #refresh { display:none; }
 .dashboard { display: grid; grid-template-columns: repeat(5, minmax(120px, 1fr)); gap: 8px; margin-bottom: 12px; }
 .dash-card { background: var(--surface); border:1px solid var(--line); border-radius: var(--radius); padding:10px 12px; }
 .dash-card .label { color: var(--muted); font-size: 12px; }
@@ -253,6 +298,20 @@ body:not(.is-admin) .manager-only { display:none !important; }
 }
 .price-tools { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
 .price-tools input { width: 130px; }
+.financial-grid {
+  display:grid;
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+  gap:8px;
+  margin-top:10px;
+}
+.financial-cell {
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:8px 10px;
+  background:var(--surface);
+}
+.financial-cell span { display:block; color:var(--muted); font-size:11px; }
+.financial-cell strong { display:block; margin-top:2px; font-size:13px; }
 @media (max-width: 760px) {
   .wrap { margin: 10px auto; padding: 0 10px; }
   .dashboard { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -276,23 +335,48 @@ body:not(.is-admin) .manager-only { display:none !important; }
       <div class="setup-copy">
         <div class="eyebrow">Setup</div>
         <strong>Ready for the next spy?</strong>
-        <span>Enter your display name and access code. Manager tools stay locked until the admin key is verified by the backend.</span>
+        <span>Enter your display name and access code once. After that, this stays compact so the work queue is first.</span>
       </div>
-      <div class="bar setup-actions">
-        <input id="me" placeholder="Your display name" style="width:220px">
-        <input id="api-key" placeholder="Access code" style="width:220px">
-        <button id="save">Save & refresh</button>
+      <div class="setup-saved">
+        <span>Signed in as <strong id="setup-saved-name">employee</strong></span>
+        <span class="pill status-approved">Access code saved</span>
         <button id="refresh" class="secondary">Refresh</button>
+        <button id="theme-toggle-compact" type="button" class="secondary">Theme</button>
+      </div>
+      <div class="bar setup-actions setup-primary">
+        <label class="sr-only" for="me">Display name</label>
+        <input id="me" placeholder="Your display name" aria-label="Display name" autocomplete="nickname" style="width:220px">
+        <label class="sr-only" for="api-key">Access code</label>
+        <input id="api-key" placeholder="Access code" aria-label="Access code" autocomplete="off" style="width:220px">
+        <button id="save">Save & refresh</button>
         <button id="theme-toggle" type="button" class="secondary">Theme</button>
       </div>
-      <details class="manager-login">
-        <summary>Manager login</summary>
+      <div id="err" class="status-line muted"></div>
+      <details class="manager-login manager-entry">
+        <summary>Optional Torn API key</summary>
+        <div class="grid" style="margin-top:8px">
+          <div class="api-privacy">
+            Privacy: this key is kept only in this browser session and is used directly against Torn API to verify you and search your recent logs. It is not saved to Google Sheets or Apps Script.
+          </div>
+          <div class="bar">
+            <label class="sr-only" for="torn-api-key">Torn API key</label>
+            <input id="torn-api-key" placeholder="Torn API key" aria-label="Torn API key" autocomplete="off" style="width:260px">
+            <label class="sr-only" for="torn-log-hours">Hours to search</label>
+            <input id="torn-log-hours" type="number" min="1" max="72" step="1" value="24" aria-label="Hours to search" style="width:120px">
+            <button id="verify-torn-key" type="button" class="secondary">Verify key</button>
+            <button id="forget-torn-key" type="button" class="secondary">Forget key</button>
+          </div>
+          <div id="torn-api-status" class="api-status muted">Optional. Use this to find spy reports from your recent Torn logs.</div>
+        </div>
+      </details>
+      <details class="manager-login manager-entry">
+        <summary>Manager access</summary>
         <div class="bar">
-          <input id="adm" placeholder="Admin key" style="width:240px">
+          <label class="sr-only" for="adm">Admin key</label>
+          <input id="adm" placeholder="Admin key" aria-label="Admin key" autocomplete="off" style="width:240px">
           <span class="muted">Admin areas only appear after backend verification.</span>
         </div>
       </details>
-      <div id="err" class="status-line muted"></div>
     </section>
 
 
@@ -310,7 +394,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
         <ol>
           <li>Enter your display name at the top of the page.</li>
           <li>Employees must contact <b>Kattemannen [2670127]</b> to get the access code.</li>
-          <li>Enter the access code and press <b>Save</b>, then press <b>Refresh</b>.</li>
+          <li>Enter the access code and press <b>Save & refresh</b>.</li>
           <li>Go to <b>Claim Board</b> and press <b>Claim</b> on the target you are working on.</li>
           <li>Paste the spy result into the target card and press <b>Submit Result</b>.</li>
           <li>If something looks wrong, press <b>Refresh</b> and check the message shown next to the top buttons.</li>
@@ -552,10 +636,12 @@ body:not(.is-admin) .manager-only { display:none !important; }
           <div class="bd grid">
             <div class="muted">Diagnostics never show webhook URLs. They only report configured/missing status and checked property names.</div>
             <div class="row">
+              <button id="check-backend-version" class="secondary">Check backend version</button>
               <button id="check-webhooks">Check webhooks</button>
               <button id="test-employee-webhook" class="secondary">Test employee webhook</button>
               <button id="test-manager-webhook" class="secondary">Test manager webhook</button>
             </div>
+            <div id="backend-diagnostics" class="diagnostic-grid"></div>
             <div id="webhook-diagnostics" class="diagnostic-grid"></div>
           </div>
         </div>
@@ -563,12 +649,13 @@ body:not(.is-admin) .manager-only { display:none !important; }
     </section>
 
     <footer class="app-footer">
-      <a href="./index.html">Torn Spy Coordinator</a> · GitHub Pages tool · Manager areas require verified admin access.
+      <a href="./index.html">Tool link</a> · Torn Spy Coordinator · Manager areas require verified admin access.
     </footer>
   </div>
 
 <script>
 const DEFAULT_API = "https://script.google.com/macros/s/AKfycbwmvn4x0wmHDllT-IYWINU1OI-DG9Hdk_sEhZUQKmsqJA16y9yOOnAHjJ6NGIqI9WTQ/exec";
+const APP_FRONTEND_VERSION = "2026-06-12-finance-v2";
 const DEFAULT_KEY = "";
 const STALE_WARNING_MINUTES = 30;
 const STALE_DANGER_MINUTES = 60;
@@ -578,6 +665,9 @@ const ASSIGNMENT_KEY = "torn_spy_assignments";
 const HISTORY_KEY = "torn_spy_delivery_history";
 const JOB_SPECIAL_URL = "https://www.torn.com/companies.php?step=your&type=1";
 const THEME_KEY = "torn_theme";
+const TORN_EMPLOYEE_API_KEY = "torn_employee_api_key_session";
+const TORN_PRIVACY_ACK_KEY = "torn_employee_api_privacy_ack";
+const TORN_API_BASE = "https://api.torn.com";
 // ===== Helpers =====
 function qs(sel){ return document.querySelector(sel); }
 function setStatus(msg) {
@@ -604,7 +694,12 @@ function friendlyErrorMessage(err) {
 }
 function hasAccessCode(){ return !!String(state.key || '').trim(); }
 function updateSetupState(){
-  document.body.classList.toggle('is-configured', !!(String(state.me || '').trim() && hasAccessCode()));
+  const hasCode = hasAccessCode();
+  const configured = !!(String(state.me || '').trim() && hasCode);
+  document.body.classList.toggle('has-access-code', hasCode);
+  document.body.classList.toggle('is-configured', configured);
+  const nameEl = qs('#setup-saved-name');
+  if (nameEl) nameEl.textContent = state.me || 'employee';
 }
 function normalizeEmployeeName(name){ return String(name || '').trim().toLowerCase(); }
 function escapeHtml(v){ return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -612,12 +707,22 @@ function attrEqualsSelector(name, value){
   return '[' + name + '="' + String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"]';
 }
 
+function applyInputA11yLabels(){
+  document.querySelectorAll('input, textarea, select').forEach(el => {
+    if (el.getAttribute('aria-label')) return;
+    if (el.labels && el.labels.length) return;
+    const label = el.getAttribute('placeholder') || el.id || el.name;
+    if (label) el.setAttribute('aria-label', label);
+  });
+}
+
 function setTheme(theme){
   const next = theme === 'dark' ? 'dark' : 'light';
   document.documentElement.dataset.theme = next;
   localStorage.setItem(THEME_KEY, next);
-  const btn = qs('#theme-toggle');
-  if (btn) btn.textContent = next === 'dark' ? 'Light mode' : 'Dark mode';
+  document.querySelectorAll('#theme-toggle, #theme-toggle-compact').forEach(btn => {
+    btn.textContent = next === 'dark' ? 'Light mode' : 'Dark mode';
+  });
 }
 
 function initTheme(){
@@ -650,6 +755,8 @@ const state={
   customerPayments: [],
   employeePayouts: [],
   webhookDiagnostics: null,
+  backendDiagnostics: null,
+  torn: { apiKey:"", verified:null, logMatches:{} },
   busyActions: {}
 };
 
@@ -737,6 +844,7 @@ function loadSettings(){
   state.me=localStorage.getItem('torn_employee')||'';
   state.key = localStorage.getItem('torn_api_key') || DEFAULT_KEY;
   state.admin = sessionStorage.getItem('torn_admin_key') || '';
+  state.torn.apiKey = sessionStorage.getItem(TORN_EMPLOYEE_API_KEY) || '';
   localStorage.removeItem('torn_admin_key');
   try{ state.auditLog = JSON.parse(localStorage.getItem(AUDIT_KEY) || '[]'); }catch(_){ state.auditLog = []; }
   try{ state.reviews = JSON.parse(localStorage.getItem(REVIEW_KEY) || '{}'); }catch(_){ state.reviews = {}; }
@@ -744,6 +852,7 @@ function loadSettings(){
   try{ state.history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); }catch(_){ state.history = []; }
   if (qs('#api-key')) qs('#api-key').value = state.key;
   if (qs('#adm')) qs('#adm').value = state.admin;
+  if (qs('#torn-api-key')) qs('#torn-api-key').value = state.torn.apiKey;
   const meI=qs('#me');
   if(meI) meI.value=state.me;
   updateSetupState();
@@ -767,6 +876,16 @@ function setActionBusy(action, busy){
 function newRequestId(prefix){
   return prefix + '_' + Date.now() + '_' + Math.random().toString(36).slice(2);
 }
+function confirmMoneyAction(title, lines){
+  const body = (lines || []).filter(Boolean).join('\n');
+  return window.confirm(title + (body ? '\n\n' + body : ''));
+}
+function setTornApiStatus(message, tone){
+  const el = qs('#torn-api-status');
+  if (!el) return;
+  el.textContent = message || '';
+  el.className = 'api-status ' + (tone === 'good' ? 'status-approved' : tone === 'warn' ? 'warn-text' : 'muted');
+}
 function saveSettings(){
   state.me=(qs('#me').value||'').trim();
   state.key=(qs('#api-key')?.value||'').trim();
@@ -774,10 +893,12 @@ function saveSettings(){
   const nextAdmin = (qs('#adm')?.value || '').trim();
   if (nextAdmin !== state.admin) state.adminVerified = false;
   state.admin = nextAdmin;
+  state.torn.apiKey = (qs('#torn-api-key')?.value || '').trim();
   localStorage.setItem('torn_employee',state.me);
   localStorage.setItem('torn_api_key', state.key);
   localStorage.setItem('torn_owner',state.owner);
-  localStorage.setItem('torn_owner',state.owner);
+  if (state.torn.apiKey) sessionStorage.setItem(TORN_EMPLOYEE_API_KEY, state.torn.apiKey);
+  else sessionStorage.removeItem(TORN_EMPLOYEE_API_KEY);
   updateSetupState();
   enforceVisibility();
 }
@@ -1172,6 +1293,7 @@ function render(){
   renderHistory();
   renderLedger();
   renderCompletedOrders();
+  renderBackendDiagnostics();
   renderWebhookDiagnostics();
   renderKnownOrders();
   renderImportPreview();
@@ -1290,7 +1412,7 @@ function renderEmployeeTargets(parent){
   const wrap = document.createElement('div');
   wrap.className = 'employee-focus';
   if (!hasAccessCode()) {
-    wrap.innerHTML = `<div class="employee-hero"><div><h2 style="margin:0">Enter access code and refresh</h2><div class="employee-count">Your work queue stays empty until setup is saved.</div></div></div>`;
+    wrap.innerHTML = `<div class="employee-hero"><div><h2 style="margin:0">Set up your queue</h2><div class="employee-count">1. Enter display name · 2. Enter access code · 3. Press Save & refresh</div></div></div>`;
     parent.appendChild(wrap);
     return;
   }
@@ -1460,7 +1582,9 @@ function renderSubmitPanel(parent, t){
   row.className = 'row';
   row.style.marginTop = '8px';
   parent.appendChild(row);
-  addButton(row, isTaskActionBusy(t.id, 'submit') ? 'Submitting...' : 'Submit Result', () => submitSpy(t.id), isTaskActionBusy(t.id, 'submit'));
+  addButton(row, isTaskActionBusy(t.id, 'logs') ? 'Searching logs...' : 'Find spy in logs', () => findSpyFromLogs(t.id, false), isTaskBusy(t.id), 'secondary');
+  addButton(row, isTaskActionBusy(t.id, 'submit') ? 'Submitting...' : 'Submit found spy', () => findSpyFromLogs(t.id, true), isTaskBusy(t.id), 'secondary');
+  addButton(row, isTaskActionBusy(t.id, 'submit') ? 'Submitting...' : 'Submit Result', () => submitSpy(t.id), isTaskBusy(t.id));
 }
 
 function renderRecentlySubmitted(){
@@ -1599,8 +1723,8 @@ function renderLedger(){
     el.innerHTML = '';
     return;
   }
-  const submitted = state.tasks.filter(t => t.status === 'submitted');
-  const customerDue = state.tasks.reduce((sum,t)=>sum + ((t.customerPaymentStatus || 'unpaid') === 'paid' ? 0 : Number(t.pricePerSpy || 0)), 0);
+  const orderFinancials = getKnownOrderIds().map(getOrderFinancialSummary);
+  const customerDue = orderFinancials.reduce((sum,row)=>sum + Number(row.customerRemaining || 0), 0);
   const payoutRows = getEmployeePayoutSuggestions();
   const employeeDue = payoutRows.reduce((sum, row) => sum + Number(row.owed || 0), 0);
   const activeCustomerPayments = state.customerPayments.filter(payment => ['paid','partial'].includes(String(payment.status || '').toLowerCase()));
@@ -1695,6 +1819,7 @@ function renderCompletedOrders(){
       const notifyStatus = order.order.completionNotificationStatus || 'not sent';
       const newOrderStatus = order.order.newOrderNotificationStatus || 'not sent';
       const priceMissing = !order.totalPrice;
+      const financial = getOrderFinancialSummary(order.orderId);
       bd.innerHTML = `
         <div class="target-title">
           <div>
@@ -1710,6 +1835,14 @@ function renderCompletedOrders(){
           <span class="pill">Completion: ${escapeHtml(notifyStatus)}</span>
         </div>
         <div class="muted" style="margin-top:8px">${order.complete ? 'Ready to notify and send to customer.' : 'Not complete yet: ' + order.approved + ' / ' + order.total + ' approved.'}</div>
+        <div class="financial-grid">
+          <div class="financial-cell"><span>Customer paid</span><strong>${formatMoney(financial.customerPaid)}</strong></div>
+          <div class="financial-cell"><span>Customer remaining</span><strong>${priceMissing ? 'Price missing' : formatMoney(financial.customerRemaining)}</strong></div>
+          <div class="financial-cell"><span>Employee due</span><strong>${formatMoney(financial.employeeDue)}</strong></div>
+          <div class="financial-cell"><span>Employee paid</span><strong>${formatMoney(financial.employeePaid)}</strong></div>
+          <div class="financial-cell"><span>Employee queued</span><strong>${formatMoney(financial.employeeQueued)}</strong></div>
+          <div class="financial-cell"><span>Estimated net</span><strong>${formatMoney(financial.estimatedProfit)}</strong></div>
+        </div>
       `;
       const priceTools = document.createElement('div');
       priceTools.className = 'price-tools';
@@ -1729,6 +1862,33 @@ function renderCompletedOrders(){
       addButton(row, 'Send new order Discord', () => sendNewOrderNotification(order.orderId), newOrderStatus === 'sent');
       el.appendChild(card);
     });
+}
+
+function renderBackendDiagnostics(){
+  const el = qs('#backend-diagnostics');
+  if (!el) return;
+  if (!state.adminVerified) {
+    el.innerHTML = '';
+    return;
+  }
+  const info = state.backendDiagnostics;
+  if (!info) {
+    el.innerHTML = `<div class="diagnostic-row"><div><strong>Frontend</strong><div class="muted">Version: ${escapeHtml(APP_FRONTEND_VERSION)}</div></div><span class="pill">local</span></div>
+      <div class="diagnostic-row"><div><strong>Apps Script backend</strong><div class="muted">Click Check backend version to confirm the deployed script supports the current UI.</div></div><span class="pill status-warning">unchecked</span></div>`;
+    return;
+  }
+  const matches = String(info.version || '') === APP_FRONTEND_VERSION;
+  el.innerHTML = `
+    <div class="diagnostic-row">
+      <div><strong>Frontend</strong><div class="muted">Version: ${escapeHtml(APP_FRONTEND_VERSION)}</div></div>
+      <span class="pill">local</span>
+    </div>
+    <div class="diagnostic-row">
+      <div><strong>Apps Script backend</strong><div class="muted">Version: ${escapeHtml(info.version || 'unknown')}</div><div class="muted">Checked: ${escapeHtml(info.checkedAt || '')}</div></div>
+      <span class="pill ${matches ? 'status-approved' : 'status-warning'}">${matches ? 'matches' : 'redeploy needed?'}</span>
+    </div>
+    <div class="muted">Actions reported: ${escapeHtml((info.actions || []).join(', ') || 'none')}</div>
+  `;
 }
 
 function renderWebhookDiagnostics(){
@@ -2391,6 +2551,13 @@ async function recordCustomerPayment(){
   };
   if (!payload.orderId && !payload.customer) { setStatus('Payment needs an order ID or customer.'); return; }
   if (!Number(payload.amount)) { setStatus('Payment needs a positive amount.'); return; }
+  if (!confirmMoneyAction('Record customer payment?', [
+    'Order: ' + (payload.orderId || '-'),
+    'Customer: ' + (payload.customer || '-'),
+    'Amount: ' + Number(payload.amount).toLocaleString(),
+    'Status: ' + payload.status,
+    payload.reference ? 'Reference: ' + payload.reference : ''
+  ])) return;
   setActionBusy('customerPayment', true);
   setStatus('Recording customer payment...');
   try{
@@ -2410,6 +2577,12 @@ async function voidCustomerPayment(paymentId){
   if (!payment) { setStatus('Customer payment not found locally. Refresh and try again.'); return; }
   const reason = window.prompt('Reason for voiding this customer payment:', 'Duplicate / wrong amount');
   if (reason === null) return;
+  if (!confirmMoneyAction('Void customer payment?', [
+    'Order: ' + (payment.orderId || '-'),
+    'Customer: ' + (payment.customer || '-'),
+    'Amount: ' + Number(payment.amount || 0).toLocaleString(),
+    'Reason: ' + reason
+  ])) return;
   try{
     await call('', 'POST', {
       action:'voidCustomerPayment',
@@ -2439,6 +2612,13 @@ async function recordEmployeePayout(){
   if (!Number(payload.amount)) { setStatus('Employee payout needs a positive amount.'); return; }
   const target = state.tasks.find(t => String(t.targetId || '') === String(payload.targetId || ''));
   if (target) payload.targetRowId = target.id;
+  if (!confirmMoneyAction('Record employee payout?', [
+    'Employee: ' + payload.employeeName,
+    'Target: ' + (payload.targetId || '-'),
+    'Amount: ' + Number(payload.amount).toLocaleString(),
+    'Status: ' + payload.status,
+    payload.reference ? 'Reference: ' + payload.reference : ''
+  ])) return;
   setActionBusy('employeePayout', true);
   setStatus('Recording employee payout...');
   try{
@@ -2458,6 +2638,12 @@ async function voidEmployeePayout(payoutId){
   if (!payout) { setStatus('Employee payout not found locally. Refresh and try again.'); return; }
   const reason = window.prompt('Reason for voiding this employee payout:', 'Duplicate / wrong amount');
   if (reason === null) return;
+  if (!confirmMoneyAction('Void employee payout?', [
+    'Employee: ' + (payout.employee || '-'),
+    'Target: ' + (payout.targetId || '-'),
+    'Amount: ' + Number(payout.amount || 0).toLocaleString(),
+    'Reason: ' + reason
+  ])) return;
   try{
     await call('', 'POST', {
       action:'voidEmployeePayout',
@@ -2639,6 +2825,163 @@ function readCorrectedSpy(id, fallback){
 
 function delay(ms){
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function ensureTornPrivacyAcknowledged(){
+  if (sessionStorage.getItem(TORN_PRIVACY_ACK_KEY) === 'yes') return true;
+  const ok = window.confirm([
+    'Use your Torn API key?',
+    '',
+    'The key will be stored only in this browser session and used directly against api.torn.com.',
+    'It will not be saved to Google Sheets or Apps Script.',
+    '',
+    'Continue?'
+  ].join('\n'));
+  if (ok) sessionStorage.setItem(TORN_PRIVACY_ACK_KEY, 'yes');
+  return ok;
+}
+
+function getTornApiKey(){
+  const key = (qs('#torn-api-key')?.value || state.torn.apiKey || '').trim();
+  if (!key) throw new Error('Enter your Torn API key first.');
+  state.torn.apiKey = key;
+  sessionStorage.setItem(TORN_EMPLOYEE_API_KEY, key);
+  return key;
+}
+
+async function fetchTornEndpoint(path, params){
+  const key = getTornApiKey();
+  const url = new URL(TORN_API_BASE + path);
+  Object.entries(params || {}).forEach(([k,v]) => {
+    if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, String(v));
+  });
+  url.searchParams.set('key', key);
+  try{
+    const res = await fetch(url.toString(), { method:'GET' });
+    const data = await res.json();
+    if (!res.ok) throw new Error('Torn API returned HTTP ' + res.status);
+    if (data && data.error) throw new Error(data.error.error || data.error.message || JSON.stringify(data.error));
+    return data;
+  }catch(e){
+    if (/Failed to fetch|NetworkError|CORS/i.test(String(e.message || e))) {
+      throw new Error('Could not contact Torn API directly from this browser. If Torn blocks browser requests, this feature needs a privacy-reviewed Apps Script proxy.');
+    }
+    throw e;
+  }
+}
+
+async function verifyTornKey(){
+  if (!ensureTornPrivacyAcknowledged()) return;
+  saveSettings();
+  setTornApiStatus('Verifying Torn API key...');
+  try{
+    const info = await fetchTornEndpoint('/key/', { selections:'info' });
+    state.torn.verified = info;
+    const owner = info.user || info.name || info.player || info.id || 'verified';
+    setTornApiStatus('Torn key verified: ' + String(owner) + '.', 'good');
+  }catch(e){
+    state.torn.verified = null;
+    setTornApiStatus('Torn key verification failed: ' + friendlyErrorMessage(e), 'warn');
+  }
+}
+
+function forgetTornKey(){
+  state.torn = { apiKey:"", verified:null, logMatches:{} };
+  sessionStorage.removeItem(TORN_EMPLOYEE_API_KEY);
+  sessionStorage.removeItem(TORN_PRIVACY_ACK_KEY);
+  const input = qs('#torn-api-key');
+  if (input) input.value = '';
+  setTornApiStatus('Torn API key forgotten for this browser session.');
+}
+
+function getTornLogHours(){
+  const value = Number(qs('#torn-log-hours')?.value || 24);
+  return Math.max(1, Math.min(72, value || 24));
+}
+
+function stringifyTornLog(entry){
+  const seen = new Set();
+  const out = [];
+  const walk = (value) => {
+    if (value == null) return;
+    if (typeof value === 'string' || typeof value === 'number') {
+      out.push(String(value));
+      return;
+    }
+    if (typeof value !== 'object' || seen.has(value)) return;
+    seen.add(value);
+    if (Array.isArray(value)) value.forEach(walk);
+    else Object.values(value).forEach(walk);
+  };
+  walk(entry);
+  return out.join('\n');
+}
+
+function normalizeTornLogs(data){
+  const candidates = data && (data.log || data.logs || data.userlog || data.entries || data);
+  if (Array.isArray(candidates)) return candidates;
+  if (candidates && typeof candidates === 'object') return Object.entries(candidates).map(([id,row]) => Object.assign({ logId:id }, row));
+  return [];
+}
+
+function findSpyLogForTarget(logs, target){
+  const targetId = String(target.targetId || '').trim();
+  const targetName = normalizeTargetName(target.targetName || '');
+  const scored = logs.map(entry => {
+    const text = stringifyTornLog(entry);
+    const parsed = parseSpyResult(text);
+    let score = 0;
+    if (targetId && text.includes(targetId)) score += 4;
+    if (targetId && parsed.targetId && String(parsed.targetId) === targetId) score += 6;
+    if (targetName && normalizeTargetName(text).includes(targetName)) score += 2;
+    if (targetName && parsed.targetName && normalizeTargetName(parsed.targetName) === targetName) score += 4;
+    if (/(strength|speed|dexterity|defense|total battle stats|you managed to get)/i.test(text)) score += 3;
+    return { entry, text, parsed, score };
+  }).filter(row => row.score > 0);
+  scored.sort((a,b) => b.score - a.score);
+  return scored[0] || null;
+}
+
+async function fetchRecentSpyLogs(hours){
+  if (!ensureTornPrivacyAcknowledged()) return [];
+  const from = Math.floor((Date.now() - (Number(hours || getTornLogHours()) * 60 * 60 * 1000)) / 1000);
+  const data = await fetchTornEndpoint('/user/', {
+    selections:'log',
+    from,
+    timestamp: Date.now()
+  });
+  return normalizeTornLogs(data);
+}
+
+async function findSpyFromLogs(id, submitAfterFind){
+  const task = state.tasks.find(t => String(t.id) === String(id));
+  if (!task) { setStatus('Target not found locally. Refresh and try again.'); return; }
+  setTaskBusy(id, true, submitAfterFind ? 'submit' : 'logs');
+  render();
+  setStatus('Searching Torn logs for ' + (task.targetName || task.targetId || 'target') + '...');
+  try{
+    const logs = await fetchRecentSpyLogs(getTornLogHours());
+    const match = findSpyLogForTarget(logs, task);
+    setTaskBusy(id, false);
+    render();
+    if (!match) {
+      setStatus('No matching spy report found in recent Torn logs.');
+      return;
+    }
+    const ta = document.getElementById('paste-' + id);
+    if (ta) {
+      ta.value = match.text;
+      restoreTaskPaste(id, match.text);
+      updateSpyPreview(id);
+    }
+    state.torn.logMatches[String(id)] = match;
+    setStatus('Found possible spy report in Torn logs. Review preview before submitting.');
+    if (submitAfterFind) await submitSpy(id);
+  }catch(e){
+    setTaskBusy(id, false);
+    render();
+    setStatus('Torn log lookup failed: ' + friendlyErrorMessage(e));
+  }
 }
 
 function extractImportTargets(raw){
@@ -2914,6 +3257,44 @@ function getOrderCompletion(orderId){
   };
 }
 
+function getOrderFinancialSummary(orderId){
+  const completion = getOrderCompletion(orderId);
+  const taskIds = new Set(completion.tasks.map(task => String(task.id || '')).filter(Boolean));
+  const targetIds = new Set(completion.tasks.map(task => String(task.targetId || '')).filter(Boolean));
+  const activeCustomerPayments = state.customerPayments.filter(row =>
+    String(row.orderId || '') === String(orderId || '') &&
+    ['paid','partial'].includes(String(row.status || '').toLowerCase())
+  );
+  const customerPaid = activeCustomerPayments.reduce((sum,row)=>sum + Number(row.amount || 0), 0);
+  const employeeDue = completion.approvedTasks.reduce((sum,task)=>sum + Number(task.employeeRate || 0), 0);
+  const matchingPayouts = state.employeePayouts.filter(row =>
+    (taskIds.has(String(row.targetRowId || '')) || targetIds.has(String(row.targetId || ''))) &&
+    String(row.status || '').toLowerCase() !== 'voided'
+  );
+  const employeePaid = matchingPayouts
+    .filter(row => String(row.status || '').toLowerCase() === 'paid')
+    .reduce((sum,row)=>sum + Number(row.amount || 0), 0);
+  const employeeQueued = matchingPayouts
+    .filter(row => String(row.status || '').toLowerCase() === 'queued')
+    .reduce((sum,row)=>sum + Number(row.amount || 0), 0);
+  const priceTotal = Number(completion.totalPrice || 0);
+  return {
+    orderId,
+    priceTotal,
+    customerPaid,
+    customerRemaining: priceTotal ? Math.max(0, priceTotal - customerPaid) : 0,
+    employeeDue,
+    employeePaid,
+    employeeQueued,
+    employeeRemaining: Math.max(0, employeeDue - employeePaid),
+    estimatedProfit: customerPaid - employeePaid
+  };
+}
+
+function formatMoney(value){
+  return Number(value || 0).toLocaleString();
+}
+
 function formatCustomerOrderMessage(orderId){
   const order = getOrderCompletion(orderId);
   if (!order.approvedTasks.length) throw new Error('No approved results in this order yet.');
@@ -2947,12 +3328,19 @@ async function setOrderPriceFromCard(orderId){
     setStatus('Enter price per spy or order total first.');
     return;
   }
+  const mode = totalValue ? 'total' : 'perSpy';
+  const amount = totalValue || eachValue;
+  if (!confirmMoneyAction('Set order price?', [
+    'Order: ' + orderId,
+    'Mode: ' + (mode === 'total' ? 'Order total' : 'Price per spy'),
+    'Amount: ' + Number(amount).toLocaleString()
+  ])) return;
   try{
     const result = await call('', 'POST', {
       action:'setOrderPrice',
       orderId,
-      mode: totalValue ? 'total' : 'perSpy',
-      amount: totalValue || eachValue,
+      mode,
+      amount,
       actor: state.me || 'manager'
     });
     addAuditLog('manager_set_order_price', orderId, JSON.stringify(result || {}));
@@ -3010,6 +3398,18 @@ async function checkWebhooks(){
   }
 }
 
+async function checkBackendVersion(){
+  try{
+    const result = await call('', 'POST', { action:'version' });
+    state.backendDiagnostics = result;
+    renderBackendDiagnostics();
+    const matches = String(result.version || '') === APP_FRONTEND_VERSION;
+    setStatus(matches ? 'Backend version matches frontend.' : 'Backend version differs. Redeploy Apps Script if you expected the newest functions.');
+  }catch(e){
+    setStatus('Backend version check failed: ' + friendlyErrorMessage(e));
+  }
+}
+
 async function testDiscordWebhook(kind){
   try{
     const result = await call('', 'POST', { action:'testDiscordWebhook', kind, actor: state.me || 'manager' });
@@ -3062,6 +3462,10 @@ async function openJobSpecial(target){
   const saveBtn=qs('#save');   if(saveBtn) saveBtn.addEventListener('click',()=>{ saveSettings(); refresh(); });
   const refBtn =qs('#refresh');if(refBtn)  refBtn.addEventListener('click',()=>{ refresh(); });
   const themeBtn=qs('#theme-toggle'); if(themeBtn) themeBtn.addEventListener('click',toggleTheme);
+  const themeCompactBtn=qs('#theme-toggle-compact'); if(themeCompactBtn) themeCompactBtn.addEventListener('click',toggleTheme);
+  const verifyTornBtn=qs('#verify-torn-key'); if(verifyTornBtn) verifyTornBtn.addEventListener('click',verifyTornKey);
+  const forgetTornBtn=qs('#forget-torn-key'); if(forgetTornBtn) forgetTornBtn.addEventListener('click',forgetTornKey);
+  const tornKeyInput=qs('#torn-api-key'); if(tornKeyInput) tornKeyInput.addEventListener('input',()=>{ state.torn.apiKey = tornKeyInput.value.trim(); state.torn.verified = null; if (state.torn.apiKey) sessionStorage.setItem(TORN_EMPLOYEE_API_KEY, state.torn.apiKey); else sessionStorage.removeItem(TORN_EMPLOYEE_API_KEY); });
   const addBtn =qs('#m-add');  if(addBtn)  addBtn.addEventListener('click',addTask);
   const previewImportBtn=qs('#m-preview-import'); if(previewImportBtn) previewImportBtn.addEventListener('click',previewImportTargets);
   const importBtn=qs('#m-import'); if(importBtn) importBtn.addEventListener('click',importTargets);
@@ -3077,6 +3481,7 @@ async function openJobSpecial(target){
   const exportHistoryBtn=qs('#export-history'); if(exportHistoryBtn) exportHistoryBtn.addEventListener('click',exportHistory);
   const recordCustomerPaymentBtn=qs('#record-customer-payment'); if(recordCustomerPaymentBtn) recordCustomerPaymentBtn.addEventListener('click',recordCustomerPayment);
   const recordEmployeePayoutBtn=qs('#record-employee-payout'); if(recordEmployeePayoutBtn) recordEmployeePayoutBtn.addEventListener('click',recordEmployeePayout);
+  const checkBackendVersionBtn=qs('#check-backend-version'); if(checkBackendVersionBtn) checkBackendVersionBtn.addEventListener('click',checkBackendVersion);
   const checkWebhooksBtn=qs('#check-webhooks'); if(checkWebhooksBtn) checkWebhooksBtn.addEventListener('click',checkWebhooks);
   const testEmployeeWebhookBtn=qs('#test-employee-webhook'); if(testEmployeeWebhookBtn) testEmployeeWebhookBtn.addEventListener('click',()=>testDiscordWebhook('employee'));
   const testManagerWebhookBtn=qs('#test-manager-webhook'); if(testManagerWebhookBtn) testManagerWebhookBtn.addEventListener('click',()=>testDiscordWebhook('manager'));
@@ -3180,6 +3585,7 @@ async function openJobSpecial(target){
 
 // ===== Init =====
 initTheme();
+applyInputA11yLabels();
 loadSettings();
 if (hasAccessCode()) {
   setStatus('Loading...');
