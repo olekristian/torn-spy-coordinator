@@ -356,9 +356,10 @@ body:not(.is-admin) .manager-only { display:none !important; }
         <summary>Optional Torn API key</summary>
         <div class="grid" style="margin-top:8px">
           <div class="api-privacy">
-            Privacy: this key is kept only in this browser session and is used directly against Torn API to verify you and search your recent logs. It is not saved to Google Sheets or Apps Script.
+            Use a Custom Torn API key with <strong>user → log</strong> only. If Torn lets you limit log categories/types, choose spy-related logs only. The key stays in this browser session and is not saved to Google Sheets or Apps Script.
           </div>
           <div class="bar">
+            <button id="create-torn-log-key" type="button" class="secondary">Create Torn log key</button>
             <label class="sr-only" for="torn-api-key">Torn API key</label>
             <input id="torn-api-key" placeholder="Torn API key" aria-label="Torn API key" autocomplete="off" style="width:260px">
             <label class="sr-only" for="torn-log-hours">Hours to search</label>
@@ -366,7 +367,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
             <button id="verify-torn-key" type="button" class="secondary">Verify key</button>
             <button id="forget-torn-key" type="button" class="secondary">Forget key</button>
           </div>
-          <div id="torn-api-status" class="api-status muted">Optional. Use this to find spy reports from your recent Torn logs.</div>
+          <div id="torn-api-status" class="api-status muted">Optional. Required access: Custom key with user → log. Do not use Full Access.</div>
         </div>
       </details>
       <details class="manager-login manager-entry">
@@ -668,6 +669,7 @@ const THEME_KEY = "torn_theme";
 const TORN_EMPLOYEE_API_KEY = "torn_employee_api_key_session";
 const TORN_PRIVACY_ACK_KEY = "torn_employee_api_privacy_ack";
 const TORN_API_BASE = "https://api.torn.com";
+const TORN_CUSTOM_KEY_BUILDER_URL = "https://www.torn.com/preferences.php#tab=api";
 // ===== Helpers =====
 function qs(sel){ return document.querySelector(sel); }
 function setStatus(msg) {
@@ -2832,6 +2834,7 @@ function ensureTornPrivacyAcknowledged(){
   const ok = window.confirm([
     'Use your Torn API key?',
     '',
+    'Required access: Custom key with user -> log only. If Torn offers spy-specific log categories/types, choose only those.',
     'The key will be stored only in this browser session and used directly against api.torn.com.',
     'It will not be saved to Google Sheets or Apps Script.',
     '',
@@ -2839,6 +2842,13 @@ function ensureTornPrivacyAcknowledged(){
   ].join('\n'));
   if (ok) sessionStorage.setItem(TORN_PRIVACY_ACK_KEY, 'yes');
   return ok;
+}
+
+function openTornCustomKeyBuilder(){
+  const popup = window.open(TORN_CUSTOM_KEY_BUILDER_URL, '_blank', 'noopener');
+  const message = 'Create a Custom Torn API key with user -> log only. If available, limit log categories/types to spy-related logs. Do not use Full Access.';
+  setTornApiStatus(message);
+  if (!popup) setStatus('Popup blocked. Open Torn API preferences and create a Custom key with user -> log only.');
 }
 
 function getTornApiKey(){
@@ -3463,6 +3473,7 @@ async function openJobSpecial(target){
   const refBtn =qs('#refresh');if(refBtn)  refBtn.addEventListener('click',()=>{ refresh(); });
   const themeBtn=qs('#theme-toggle'); if(themeBtn) themeBtn.addEventListener('click',toggleTheme);
   const themeCompactBtn=qs('#theme-toggle-compact'); if(themeCompactBtn) themeCompactBtn.addEventListener('click',toggleTheme);
+  const createTornKeyBtn=qs('#create-torn-log-key'); if(createTornKeyBtn) createTornKeyBtn.addEventListener('click',openTornCustomKeyBuilder);
   const verifyTornBtn=qs('#verify-torn-key'); if(verifyTornBtn) verifyTornBtn.addEventListener('click',verifyTornKey);
   const forgetTornBtn=qs('#forget-torn-key'); if(forgetTornBtn) forgetTornBtn.addEventListener('click',forgetTornKey);
   const tornKeyInput=qs('#torn-api-key'); if(tornKeyInput) tornKeyInput.addEventListener('input',()=>{ state.torn.apiKey = tornKeyInput.value.trim(); state.torn.verified = null; if (state.torn.apiKey) sessionStorage.setItem(TORN_EMPLOYEE_API_KEY, state.torn.apiKey); else sessionStorage.removeItem(TORN_EMPLOYEE_API_KEY); });
