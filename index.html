@@ -672,36 +672,6 @@ function isTaskActionBusy(id, action){
   return state.busyTaskActions[String(id)] === action;
 }
 
-function completeStats(p){
-  const toInt = (x)=> x==null ? null : Math.round(Number(x));
-  const a = {
-    strength: toInt(p.strength),
-    speed: toInt(p.speed),
-    dexterity: toInt(p.dexterity),
-    defense: toInt(p.defense),
-    total: toInt(p.total)
-  };
-  const parts = [a.strength, a.speed, a.dexterity, a.defense];
-  const known = parts.filter(v=>v!=null).length;
-
-  // total from 4 parts
-  if (a.total==null && known===4) {
-    a.total = parts[0]+parts[1]+parts[2]+parts[3];
-  }
-  // one missing part from total
-  if (a.total!=null && known===3) {
-    const miss = parts.findIndex(v=>v==null);
-    const sumKnown = parts.reduce((s,v)=>s+(v||0),0);
-    const val = Math.max(0, a.total - sumKnown);
-    if (miss===0) a.strength = val;
-    if (miss===1) a.speed    = val;
-    if (miss===2) a.dexterity= val;
-    if (miss===3) a.defense  = val;
-  }
-  p.strength=a.strength; p.speed=a.speed; p.dexterity=a.dexterity; p.defense=a.defense; p.total=a.total;
-  return p;
-}
-
 function extractSpyBlocks(raw){
   const t = sanitizeInput(raw||'');
   const re = /(^|\n)\s*Name\s*[:\-]?.*?(?=(\n\s*Name\s*[:\-]?|$))/gis;
@@ -763,37 +733,11 @@ function mergeSpiesStrictTotal(spyArray){
   });
 }
 
-function formatBlock(p){
-  // Re-kalkuler alltid total strengt fra 4 stats
-  const has4 = [p.strength,p.speed,p.dexterity,p.defense].every(v=>v!=null);
-  const total = has4 ? (p.strength + p.speed + p.dexterity + p.defense) : null;
-
-  const fmt = (n)=> (n==null?0:n).toLocaleString('en-US');
-  const nm = (p.name||'Unknown') + (p.targetId? ` [${p.targetId}]`:(p.id? ` [${p.id}]`:''));
-  return [
-    `Name:${nm}`,
-    ``,
-    `Level:${p.level ?? '?'}`,
-    ``,
-    `You managed to get the following results:`,
-    ``,
-    `Strength: ${fmt(p.strength)}`,
-    ``,
-    `Speed: ${fmt(p.speed)}`,
-    ``,
-    `Dexterity: ${fmt(p.dexterity)}`,
-    ``,
-    `Defense: ${fmt(p.defense)}`,
-    ``,
-    `Total: ${fmt(total)}`
-  ].join('\n');
-}
-
-
 function loadSettings(){
   state.me=localStorage.getItem('torn_employee')||'';
   state.key = localStorage.getItem('torn_api_key') || DEFAULT_KEY;
-  state.admin = localStorage.getItem('torn_admin_key') || '';
+  state.admin = sessionStorage.getItem('torn_admin_key') || '';
+  localStorage.removeItem('torn_admin_key');
   try{ state.auditLog = JSON.parse(localStorage.getItem(AUDIT_KEY) || '[]'); }catch(_){ state.auditLog = []; }
   try{ state.reviews = JSON.parse(localStorage.getItem(REVIEW_KEY) || '{}'); }catch(_){ state.reviews = {}; }
   try{ state.assignments = JSON.parse(localStorage.getItem(ASSIGNMENT_KEY) || '{}'); }catch(_){ state.assignments = {}; }
@@ -902,6 +846,7 @@ function jsonpCall(url, payload){
 async function verifyAdminKey(){
   if (!state.admin) {
     state.adminVerified = false;
+    sessionStorage.removeItem('torn_admin_key');
     localStorage.removeItem('torn_admin_key');
     enforceVisibility();
     return false;
@@ -909,11 +854,13 @@ async function verifyAdminKey(){
   try{
     await call('', 'POST', { action:'verifyAdmin' });
     state.adminVerified = true;
-    localStorage.setItem('torn_admin_key', state.admin);
+    sessionStorage.setItem('torn_admin_key', state.admin);
+    localStorage.removeItem('torn_admin_key');
     enforceVisibility();
     return true;
   }catch(e){
     state.adminVerified = false;
+    sessionStorage.removeItem('torn_admin_key');
     localStorage.removeItem('torn_admin_key');
     enforceVisibility();
     setStatus('Admin key not verified. Manager tools are hidden.');
@@ -1097,6 +1044,8 @@ function parseSpyResult(rawText){
 // Optional: your formatter, updated to show either targetId or parsed id
 function formatBlock(p){
   completeStats(p);
+  const has4 = [p.strength,p.speed,p.dexterity,p.defense].every(v=>v!=null);
+  const total = has4 ? (p.strength + p.speed + p.dexterity + p.defense) : p.total;
   const fmt = (n)=> (n==null?0:n).toLocaleString('en-US');
   const nm = (p.name||'Unknown') + (p.targetId? ` [${p.targetId}]`:(p.id? ` [${p.id}]`:''));
   return [
@@ -1114,7 +1063,7 @@ function formatBlock(p){
     ``,
     `Defense: ${fmt(p.defense)}`,
     ``,
-    `Total: ${fmt(p.total)}`
+    `Total: ${fmt(total)}`
   ].join('\n');
 }
 
@@ -1656,7 +1605,8 @@ function renderLedger(){
   const employeeDue = payoutRows.reduce((sum, row) => sum + Number(row.owed || 0), 0);
   const activeCustomerPayments = state.customerPayments.filter(payment => ['paid','partial'].includes(String(payment.status || '').toLowerCase()));
   const collected = activeCustomerPayments.reduce((sum,p)=>sum + Number(p.amount || 0), 0);
-  const paidOut = state.employeePayouts.reduce((sum,p)=>sum + Number(p.amount || 0), 0);
+  const activeEmployeePayouts = state.employeePayouts.filter(payout => String(payout.status || '').toLowerCase() === 'paid');
+  const paidOut = activeEmployeePayouts.reduce((sum,p)=>sum + Number(p.amount || 0), 0);
   const rows = [
     ['Customer unpaid value', customerDue],
     ['Employee unpaid value', employeeDue],
@@ -1674,7 +1624,14 @@ function renderLedger(){
         return `<tr><td>${escapeHtml(row.recordedAt ? new Date(row.recordedAt).toLocaleString() : '')}</td><td>${escapeHtml(row.orderId || '')}</td><td>${escapeHtml(row.customer || '')}</td><td>${Number(row.amount || 0).toLocaleString()}</td><td><span class="pill ${isVoided ? 'status-rejected' : 'status-approved'}">${escapeHtml(row.status || '')}</span></td><td>${escapeHtml(row.reference || row.note || '')}</td><td>${isVoided ? '<span class="muted">Voided</span>' : `<button class="void-customer-payment secondary" data-payment-id="${escapeHtml(row.id || '')}">Void</button>`}</td></tr>`;
       }).join('')}</tbody></table>`
     : '<div class="muted" style="margin-top:12px">No customer payments recorded yet.</div>';
-  el.innerHTML = `<table><thead><tr><th>Metric</th><th>Amount</th></tr></thead><tbody>${rows.map(([k,v])=>`<tr><td>${escapeHtml(k)}</td><td>${Number(v || 0).toLocaleString()}</td></tr>`).join('')}</tbody></table><div class="employee-section-title" style="margin-top:14px">Customer payment log</div>${paymentTable}${payoutTable}`;
+  const employeePaymentRows = state.employeePayouts.slice().reverse().slice(0, 20);
+  const employeePaymentTable = employeePaymentRows.length
+    ? `<table style="margin-top:12px"><thead><tr><th>Recorded</th><th>Employee</th><th>Target</th><th>Amount</th><th>Status</th><th>Reference</th><th>Action</th></tr></thead><tbody>${employeePaymentRows.map(row => {
+        const isVoided = String(row.status || '').toLowerCase() === 'voided';
+        return `<tr><td>${escapeHtml(row.recordedAt ? new Date(row.recordedAt).toLocaleString() : '')}</td><td>${escapeHtml(row.employee || '')}</td><td>${escapeHtml(row.targetId || '')}</td><td>${Number(row.amount || 0).toLocaleString()}</td><td><span class="pill ${isVoided ? 'status-rejected' : 'status-approved'}">${escapeHtml(row.status || '')}</span></td><td>${escapeHtml(row.reference || row.note || '')}</td><td>${isVoided ? '<span class="muted">Voided</span>' : `<button class="void-employee-payout secondary" data-payout-id="${escapeHtml(row.id || '')}">Void</button>`}</td></tr>`;
+      }).join('')}</tbody></table>`
+    : '<div class="muted" style="margin-top:12px">No employee payouts recorded yet.</div>';
+  el.innerHTML = `<table><thead><tr><th>Metric</th><th>Amount</th></tr></thead><tbody>${rows.map(([k,v])=>`<tr><td>${escapeHtml(k)}</td><td>${Number(v || 0).toLocaleString()}</td></tr>`).join('')}</tbody></table><div class="employee-section-title" style="margin-top:14px">Customer payment log</div>${paymentTable}<div class="employee-section-title" style="margin-top:14px">Employee payout log</div>${employeePaymentTable}${payoutTable}`;
 }
 
 function getEmployeePayoutSuggestions(){
@@ -1887,9 +1844,9 @@ async function claim(id){
     delete state.assignments[taskKey(task)];
     saveAssignments();
     addAuditLog('target_claimed', task && task.targetId, task && task.targetName);
-    setStatus('Claim registered.');
     setTaskBusy(id, false);
-    refresh();
+    await refresh();
+    setStatus('Claim registered.');
   }catch(e){
     setTaskBusy(id, false);
     await refresh();
@@ -1909,9 +1866,9 @@ async function unclaim(id){
   try{
     await call('', 'POST', {action:'unclaim', id, employee: state.me.trim()});
     addAuditLog('target_released', task && task.targetId, task && task.targetName);
-    setStatus('Claim removed.');
     setTaskBusy(id, false);
-    refresh();
+    await refresh();
+    setStatus('Claim removed.');
   }catch(e){
     setTaskBusy(id, false);
     await refresh();
@@ -2007,9 +1964,9 @@ async function submitSpy(id){
     saveReviews();
     if (submitWarnings.length || missing.length) addAuditLog('submission_warning', payload.targetId, submitWarnings.concat(missing.length ? ['Missing: ' + missing.join(', ')] : []).join(' | '));
     addAuditLog('spy_submitted', payload.targetId, payload.name);
-    setStatus('Result submitted.');
     setTaskBusy(id, false);
-    refresh();
+    await refresh();
+    setStatus('Result submitted.');
   }catch(e){
     setTaskBusy(id, false);
     render();
@@ -2469,19 +2426,51 @@ async function voidCustomerPayment(paymentId){
 }
 
 async function recordEmployeePayout(){
+  if (state.busyActions.employeePayout) return;
   const payload = {
-    employeeName: qs('#ledger-employee')?.value || '',
-    targetId: qs('#ledger-target-id')?.value || '',
-    amount: qs('#ledger-employee-amount')?.value || '',
+    employeeName: (qs('#ledger-employee')?.value || '').trim(),
+    targetId: (qs('#ledger-target-id')?.value || '').trim(),
+    amount: (qs('#ledger-employee-amount')?.value || '').trim(),
     status: qs('#ledger-employee-status')?.value || 'paid',
-    reference: qs('#ledger-payout-ref')?.value || ''
+    reference: (qs('#ledger-payout-ref')?.value || '').trim(),
+    requestId: newRequestId('emppay')
   };
+  if (!payload.employeeName) { setStatus('Employee payout needs an employee display name.'); return; }
+  if (!Number(payload.amount)) { setStatus('Employee payout needs a positive amount.'); return; }
   const target = state.tasks.find(t => String(t.targetId || '') === String(payload.targetId || ''));
   if (target) payload.targetRowId = target.id;
-  await syncLedgerAction('employeePayout', payload);
-  addAuditLog('employee_payout_recorded', payload.targetId, payload.employeeName + ' ' + payload.amount + ' ' + payload.status);
-  setStatus('Employee payout recorded.');
-  refresh();
+  setActionBusy('employeePayout', true);
+  setStatus('Recording employee payout...');
+  try{
+    const result = await syncLedgerAction('employeePayout', payload, true);
+    addAuditLog('employee_payout_recorded', payload.targetId, payload.employeeName + ' ' + payload.amount + ' ' + payload.status);
+    await refresh();
+    setStatus((result && result.duplicate ? 'Duplicate ignored. ' : '') + 'Employee payout recorded: ' + Number(payload.amount).toLocaleString() + ' for ' + payload.employeeName + '.');
+  }catch(e){
+    setStatus('Employee payout failed: ' + friendlyErrorMessage(e));
+  }finally{
+    setActionBusy('employeePayout', false);
+  }
+}
+
+async function voidEmployeePayout(payoutId){
+  const payout = state.employeePayouts.find(row => String(row.id || '') === String(payoutId || ''));
+  if (!payout) { setStatus('Employee payout not found locally. Refresh and try again.'); return; }
+  const reason = window.prompt('Reason for voiding this employee payout:', 'Duplicate / wrong amount');
+  if (reason === null) return;
+  try{
+    await call('', 'POST', {
+      action:'voidEmployeePayout',
+      payoutId,
+      reason,
+      actor: state.me || 'manager'
+    });
+    addAuditLog('employee_payout_voided', payout.targetId || '', payoutId + ' | ' + reason);
+    await refresh();
+    setStatus('Employee payout voided: ' + Number(payout.amount || 0).toLocaleString() + (payout.employee ? ' for ' + payout.employee : '') + '.');
+  }catch(e){
+    setStatus('Void employee payout failed: ' + friendlyErrorMessage(e));
+  }
 }
 
 function setImportSummary(lines){
@@ -2967,8 +2956,8 @@ async function setOrderPriceFromCard(orderId){
       actor: state.me || 'manager'
     });
     addAuditLog('manager_set_order_price', orderId, JSON.stringify(result || {}));
-    setStatus('Price updated for order ' + orderId + '.');
     await refresh();
+    setStatus('Price updated for order ' + orderId + '.');
   }catch(e){
     setStatus('Set price failed: ' + friendlyErrorMessage(e));
   }
@@ -2985,8 +2974,8 @@ async function sendOrderCompletionNotification(orderId, markOnly){
     const status = result && result.status ? result.status : (markOnly ? 'marked' : 'sent');
     const debug = result && result.checkedKeys ? ' Checked: ' + result.checkedKeys.join(', ') + '. Found: ' + ((result.foundKeys || []).join(', ') || 'none') + '.' : '';
     addAuditLog(markOnly ? 'manager_marked_order_completion_sent' : 'manager_sent_order_completion_notification', orderId, status);
-    setStatus('Order completion notification status: ' + status + '.' + debug);
     await refresh();
+    setStatus('Order completion notification status: ' + status + '.' + debug);
   }catch(e){
     setStatus('Order completion notification failed: ' + friendlyErrorMessage(e));
   }
@@ -3002,8 +2991,8 @@ async function sendNewOrderNotification(orderId){
     const status = result && result.status ? result.status : 'sent';
     const debug = result && result.checkedKeys ? ' Checked: ' + result.checkedKeys.join(', ') + '. Found: ' + ((result.foundKeys || []).join(', ') || 'none') + '.' : '';
     addAuditLog('manager_sent_new_order_notification', orderId, status);
-    setStatus('New order notification status: ' + status + '.' + debug);
     await refresh();
+    setStatus('New order notification status: ' + status + '.' + debug);
   }catch(e){
     setStatus('New order notification failed: ' + friendlyErrorMessage(e));
   }
@@ -3097,6 +3086,11 @@ async function openJobSpecial(target){
       const voidBtn = event.target.closest('.void-customer-payment');
       if (voidBtn) {
         voidCustomerPayment(voidBtn.getAttribute('data-payment-id') || '');
+        return;
+      }
+      const voidPayoutBtn = event.target.closest('.void-employee-payout');
+      if (voidPayoutBtn) {
+        voidEmployeePayout(voidPayoutBtn.getAttribute('data-payout-id') || '');
         return;
       }
       const btn = event.target.closest('.ledger-suggest');

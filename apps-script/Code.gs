@@ -27,7 +27,7 @@ const HEADERS = {
   Customers: ['customer','contact','notes','createdAt','updatedAt'],
   Employees: ['displayName','payoutHandle','defaultRate','notes','createdAt','updatedAt'],
   CustomerPayments: ['id','orderId','customer','amount','status','reference','note','recordedBy','recordedAt','requestId','voidedAt','voidedBy','voidReason'],
-  EmployeePayouts: ['id','submissionId','targetRowId','employee','targetId','amount','status','reference','note','recordedBy','recordedAt'],
+  EmployeePayouts: ['id','submissionId','targetRowId','employee','targetId','amount','status','reference','note','recordedBy','recordedAt','requestId','voidedAt','voidedBy','voidReason'],
   AuditLog: ['timestamp','actor','action','targetId','details'],
   DeliveryHistory: ['id','orderId','customer','targetName','targetId','deliveredBy','submittedAt','reviewStatus','level','formatted','rawText','archivedBy','archivedAt','notes'],
 };
@@ -66,6 +66,7 @@ function dispatch_(action, input) {
   if (action === 'customerPayment') return recordCustomerPayment_(input);
   if (action === 'voidCustomerPayment') return voidCustomerPayment_(input);
   if (action === 'employeePayout') return recordEmployeePayout_(input);
+  if (action === 'voidEmployeePayout') return voidEmployeePayout_(input);
   if (action === 'history') return archiveHistory_(input);
   if (action === 'verifyAdmin') return verifyAdmin_(input);
   if (action === 'webhookDebug') return webhookDebug_(input);
@@ -344,7 +345,7 @@ function recordCustomerPayment_(input) {
     voidedBy: '',
     voidReason: '',
   });
-  updateOrderPayment_(input.orderId, input.status || 'paid');
+  recalculateOrderPaymentFromPayments_(input.orderId);
   addAudit_(input.employee || 'manager', 'customer_payment_' + (input.status || 'paid'), input.orderId || '', input.customer || '');
   return { ok:true, paymentId:paymentId, amount:amount };
 }
@@ -370,28 +371,65 @@ function voidCustomerPayment_(input) {
 
 function recordEmployeePayout_(input) {
   requireAdmin_(input);
+  const requestId = String(input.requestId || '').trim();
+  if (requestId) {
+    const existing = readObjects_(SHEETS.employeePayouts).find(row => String(row.requestId || '') === requestId);
+    if (existing) return { ok:true, duplicate:true, payoutId:existing.id };
+  }
+  const amount = num_(input.amount);
+  if (!amount || amount < 0) throw new Error('A positive employee payout amount is required.');
+  const payoutId = uid_('emppay');
   appendObject_(SHEETS.employeePayouts, {
-    id: uid_('emppay'),
+    id: payoutId,
     submissionId: input.submissionId || '',
     targetRowId: input.targetRowId || '',
     employee: input.employeeName || input.employee || '',
     targetId: input.targetId || '',
-    amount: input.amount || '',
+    amount: amount,
     status: input.status || 'paid',
     reference: input.reference || '',
     note: input.note || '',
     recordedBy: input.recordedBy || input.employee || 'manager',
     recordedAt: now_(),
+    requestId: requestId,
+    voidedAt: '',
+    voidedBy: '',
+    voidReason: '',
   });
   if (input.targetRowId) {
     updateTarget_(input.targetRowId, row => {
-      row.employeePayoutStatus = input.status || 'paid';
+      row.employeePayoutStatus = calculateTargetEmployeePayoutStatus_(input.targetRowId);
       row.updatedAt = now_();
       return row;
     });
   }
   addAudit_(input.employee || 'manager', 'employee_payout_' + (input.status || 'paid'), input.targetId || '', input.employeeName || '');
-  return { ok:true };
+  return { ok:true, payoutId:payoutId, amount:amount };
+}
+
+function voidEmployeePayout_(input) {
+  requireAdmin_(input);
+  const payoutId = String(input.payoutId || '').trim();
+  if (!payoutId) throw new Error('payoutId is required.');
+  const row = readObjectsWithRows_(SHEETS.employeePayouts).find(r => String(r.id || '') === payoutId);
+  if (!row) throw new Error('Employee payout not found.');
+  const actor = input.actor || input.employee || 'manager';
+  const reason = input.reason || 'voided by manager';
+  writeObjectAtRow_(sheet_(SHEETS.employeePayouts), row._row, {
+    status: 'voided',
+    voidedAt: now_(),
+    voidedBy: actor,
+    voidReason: reason,
+  });
+  if (row.targetRowId) {
+    updateTarget_(row.targetRowId, target => {
+      target.employeePayoutStatus = calculateTargetEmployeePayoutStatus_(row.targetRowId);
+      target.updatedAt = now_();
+      return target;
+    });
+  }
+  addAudit_(actor, 'employee_payout_voided', row.targetId || '', payoutId + ' | ' + reason);
+  return { ok:true, payoutId:payoutId, status:'voided' };
 }
 
 function archiveHistory_(input) {
@@ -492,6 +530,7 @@ function setOrderPrice_(input) {
       updatedAt: now,
     });
   }
+  recalculateOrderPaymentFromPayments_(orderId);
   addAudit_(input.actor || input.employee || 'manager', 'order_price_set', orderId, mode + ': ' + amount);
   return { ok:true, orderId:orderId, mode:mode, pricePerSpy:pricePerSpy, totalPrice:totalPrice, targetCount:targets.length };
 }
@@ -829,11 +868,31 @@ function recalculateOrderPaymentFromPayments_(orderId) {
   if (!row) return;
   const active = readObjects_(SHEETS.customerPayments)
     .filter(payment => String(payment.orderId || '') === String(orderId))
-    .filter(payment => String(payment.status || '').toLowerCase() !== 'voided');
+    .filter(payment => ['paid','partial'].indexOf(String(payment.status || '').toLowerCase()) !== -1);
+  const paidAmount = active.reduce((sum, payment) => sum + num_(payment.amount), 0);
+  const totalPrice = num_(row.totalPrice);
   let status = 'unpaid';
-  if (active.some(payment => String(payment.status || '').toLowerCase() === 'paid')) status = 'paid';
-  else if (active.some(payment => String(payment.status || '').toLowerCase() === 'partial')) status = 'partial';
+  if (paidAmount > 0 && totalPrice > 0 && paidAmount >= totalPrice) status = 'paid';
+  else if (paidAmount > 0) status = 'partial';
   writeObjectAtRow_(sheet_(SHEETS.orders), row._row, { paymentStatus: status, updatedAt: now_() });
+}
+
+function calculateTargetEmployeePayoutStatus_(targetRowId) {
+  if (!targetRowId) return 'unpaid';
+  const target = readObjects_(SHEETS.targets).find(row => String(row.id || '') === String(targetRowId));
+  const owed = num_(target && target.employeeRate);
+  const active = readObjects_(SHEETS.employeePayouts)
+    .filter(payout => String(payout.targetRowId || '') === String(targetRowId));
+  const paidAmount = active
+    .filter(payout => String(payout.status || '').toLowerCase() === 'paid')
+    .reduce((sum, payout) => sum + num_(payout.amount), 0);
+  const queuedAmount = active
+    .filter(payout => String(payout.status || '').toLowerCase() === 'queued')
+    .reduce((sum, payout) => sum + num_(payout.amount), 0);
+  if (owed > 0 && paidAmount >= owed) return 'paid';
+  if (owed <= 0 && paidAmount > 0) return 'paid';
+  if (paidAmount > 0 || queuedAmount > 0) return 'queued';
+  return 'unpaid';
 }
 
 function updateTarget_(id, updater) {
