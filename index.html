@@ -356,7 +356,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
         <summary>Optional Torn API key</summary>
         <div class="grid" style="margin-top:8px">
           <div class="api-privacy">
-            Use a Custom Torn API key with <strong>user → reports</strong> only. The key stays in this browser session and is not saved to Google Sheets or Apps Script.
+            Use a Custom Torn API key with <strong>user → reports</strong> and <strong>user → profile</strong>. Reports provide stats; profile is only used to fill missing level. The key stays in this browser session and is not saved to Google Sheets or Apps Script.
           </div>
           <div class="bar">
             <button id="create-torn-log-key" type="button" class="secondary">Create Torn log key</button>
@@ -367,7 +367,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
             <button id="verify-torn-key" type="button" class="secondary">Verify key</button>
             <button id="forget-torn-key" type="button" class="secondary">Forget key</button>
           </div>
-          <div id="torn-api-status" class="api-status muted">Optional. Required access: Custom key with user → reports only. Do not use Full Access.</div>
+          <div id="torn-api-status" class="api-status muted">Optional. Required access: Custom key with user → reports and user → profile. Do not use Full Access.</div>
         </div>
       </details>
       <details class="manager-login manager-entry">
@@ -669,7 +669,7 @@ const THEME_KEY = "torn_theme";
 const TORN_EMPLOYEE_API_KEY = "torn_employee_api_key_session";
 const TORN_PRIVACY_ACK_KEY = "torn_employee_api_privacy_ack";
 const TORN_API_BASE = "https://api.torn.com";
-const TORN_CUSTOM_KEY_BUILDER_URL = "https://www.torn.com/preferences.php#tab=api?step=addNewKey&title=Bring_Em_Closer_Spy_Tool&user=reports";
+const TORN_CUSTOM_KEY_BUILDER_URL = "https://www.torn.com/preferences.php#tab=api?step=addNewKey&title=Bring_Em_Closer_Spy_Tool&user=reports,profile";
 const TORN_REPORT_LOOKUP_ATTEMPTS = 4;
 const TORN_REPORT_LOOKUP_DELAY_MS = 1400;
 const TORN_REPORT_FETCH_LIMIT = 100;
@@ -2861,7 +2861,7 @@ function ensureTornPrivacyAcknowledged(){
   const ok = window.confirm([
     'Use your Torn API key?',
     '',
-    'Required access: Custom key with user -> reports only. Do not use Full Access.',
+    'Required access: Custom key with user -> reports and user -> profile. Profile is used only to fill missing level. Do not use Full Access.',
     'The key will be stored only in this browser session and used directly against api.torn.com.',
     'It will not be saved to Google Sheets or Apps Script.',
     '',
@@ -2873,9 +2873,9 @@ function ensureTornPrivacyAcknowledged(){
 
 function openTornCustomKeyBuilder(){
   const popup = window.open(TORN_CUSTOM_KEY_BUILDER_URL, '_blank', 'noopener');
-  const message = 'The Torn key page should open with user -> reports selected. Confirm it has no extra access. Do not use Full Access.';
+  const message = 'The Torn key page should open with user -> reports and user -> profile selected. Reports provide stats; profile fills missing level. Confirm it has no extra access. Do not use Full Access.';
   setTornApiStatus(message);
-  if (!popup) setStatus('Popup blocked. Open Torn API preferences and create a Custom key with user -> reports only.');
+  if (!popup) setStatus('Popup blocked. Open Torn API preferences and create a Custom key with user -> reports and user -> profile.');
 }
 
 function getTornApiKey(){
@@ -2973,7 +2973,9 @@ function normalizeReportKey(key){
 }
 
 function getTargetLevel(target){
-  return parseNumberToken(target && (target.level ?? target.targetLevel ?? target.lvl ?? target.notesLevel));
+  const direct = parseNumberToken(target && (target.level ?? target.targetLevel ?? target.lvl ?? target.notesLevel));
+  if (direct != null) return direct;
+  return parseImportLevel([target && target.targetName, target && target.notes].filter(Boolean).join(' '));
 }
 
 function findReportField(entry, aliases){
@@ -3130,6 +3132,40 @@ function findSpyLogForTarget(logs, target){
   return findSpyReportForTarget(logs, target);
 }
 
+function buildTornReportTextFromParsed(parsed, metaLine){
+  return [
+    'type: stats',
+    parsed.targetId ? 'target_id: ' + parsed.targetId : '',
+    parsed.targetName ? 'target_name: ' + parsed.targetName : '',
+    parsed.level != null ? 'level: ' + parsed.level : '',
+    parsed.strength != null ? 'strength: ' + parsed.strength : '',
+    parsed.speed != null ? 'speed: ' + parsed.speed : '',
+    parsed.dexterity != null ? 'dexterity: ' + parsed.dexterity : '',
+    parsed.defense != null ? 'defense: ' + parsed.defense : '',
+    parsed.total != null ? 'total: ' + parsed.total : '',
+    metaLine ? '' : '',
+    metaLine || ''
+  ].filter(line => line !== null && line !== undefined).join('\n');
+}
+
+async function fetchTornProfileLevel(targetId){
+  const id = String(targetId || '').trim();
+  if (!/^\d{3,}$/.test(id)) return null;
+  const attempts = [
+    ['/v2/user/' + encodeURIComponent(id) + '/profile', { timestamp: Date.now() }],
+    ['/v2/user/' + encodeURIComponent(id), { selections:'profile', timestamp: Date.now() }],
+    ['/user/' + encodeURIComponent(id), { selections:'profile', timestamp: Date.now() }]
+  ];
+  for (const [path, params] of attempts) {
+    try{
+      const data = await fetchTornEndpoint(path, params);
+      const level = parseNumberToken(findReportField(data, ['level','target_level','targetlevel','player_level','playerlevel','user_level','userlevel','lvl']));
+      if (level != null) return level;
+    }catch(_){}
+  }
+  return null;
+}
+
 async function fetchRecentSpyLogs(hours){
   if (!ensureTornPrivacyAcknowledged()) return [];
   const from = Math.floor((Date.now() - (Number(hours || getTornLogHours()) * 60 * 60 * 1000)) / 1000);
@@ -3218,6 +3254,18 @@ async function findSpyFromLogs(id, submitAfterFind){
       const sample = debug.sampleKeys && debug.sampleKeys.length ? ' Sample fields: ' + debug.sampleKeys.join(', ') + '.' : '';
       setStatus('No matching spy report found in recent Torn reports. Fetched ' + reports.length + ' report(s).' + sample);
       return;
+    }
+    if (match.parsed.level == null) {
+      setStatus('Found spy report. Fetching target level from Torn profile...');
+      const profileLevel = await fetchTornProfileLevel(match.parsed.targetId || task.targetId);
+      if (profileLevel != null) {
+        match.parsed.level = profileLevel;
+        match.text = buildTornReportTextFromParsed(match.parsed, match.merged ? 'Merged from ' + (match.reportCount || '?') + ' Torn report(s).' : '');
+        match.parsed.rawText = match.text;
+        setTornApiStatus('Fetched target level from Torn profile: ' + profileLevel + '.', 'good');
+      } else {
+        setTornApiStatus('Spy report found, but level was not available. Recreate the key with user -> profile or add level on import.', 'warn');
+      }
     }
     const ta = document.getElementById('paste-' + id);
     if (ta) {
