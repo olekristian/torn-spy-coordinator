@@ -2934,12 +2934,21 @@ function normalizeTornLogs(data){
   return [];
 }
 
+function looksLikeSpyResultText(text, parsed){
+  const value = String(text || '');
+  const hasParsedStats = parsed && [parsed.strength, parsed.speed, parsed.dexterity, parsed.defense, parsed.total].some(v => v != null);
+  const hasSpyPhrases = /(you managed to get the following results|total battle stats|strength\s*[:=]|speed\s*[:=]|dexterity\s*[:=]|defen[cs]e\s*[:=])/i.test(value);
+  const knownNonSpyLog = /(company special view target info|job special|view target info)/i.test(value);
+  return !knownNonSpyLog && (hasParsedStats || hasSpyPhrases);
+}
+
 function findSpyLogForTarget(logs, target){
   const targetId = String(target.targetId || '').trim();
   const targetName = normalizeTargetName(target.targetName || '');
   const scored = logs.map(entry => {
     const text = stringifyTornLog(entry);
     const parsed = parseSpyResult(text);
+    if (!looksLikeSpyResultText(text, parsed)) return null;
     let score = 0;
     if (targetId && text.includes(targetId)) score += 4;
     if (targetId && parsed.targetId && String(parsed.targetId) === targetId) score += 6;
@@ -2947,7 +2956,7 @@ function findSpyLogForTarget(logs, target){
     if (targetName && parsed.targetName && normalizeTargetName(parsed.targetName) === targetName) score += 4;
     if (/(strength|speed|dexterity|defense|total battle stats|you managed to get)/i.test(text)) score += 3;
     return { entry, text, parsed, score };
-  }).filter(row => row.score > 0);
+  }).filter(row => row && row.score > 0);
   scored.sort((a,b) => b.score - a.score);
   return scored[0] || null;
 }
@@ -2975,7 +2984,7 @@ async function findSpyFromLogs(id, submitAfterFind){
     setTaskBusy(id, false);
     render();
     if (!match) {
-      setStatus('No matching spy report found in recent Torn logs.');
+      setStatus('No matching spy report found in recent Torn logs. Non-spy logs such as company/job-special views are ignored.');
       return;
     }
     const ta = document.getElementById('paste-' + id);
