@@ -1,9 +1,10 @@
 function _props(){ return PropertiesService.getScriptProperties(); }
 function _apiKey(){ return _props().getProperty('API_KEY') || ''; }
 function _adminKey(){ return _props().getProperty('ADMIN_KEY') || ''; }
-const BACKEND_VERSION = '2026-06-12-finance-v2';
+const BACKEND_VERSION = '2026-06-13-automation-v1';
 const MANAGER_WEBHOOK_KEYS = ['MANAGER_DISCORD_WEBHOOK_URL','DISCORD_MANAGER_WEBHOOK_URL','MANAGER_WEBHOOK_URL','DISCORD_WEBHOOK_URL'];
 const EMPLOYEE_WEBHOOK_KEYS = ['EMPLOYEE_DISCORD_WEBHOOK_URL','DISCORD_EMPLOYEE_WEBHOOK_URL','EMPLOYEE_WEBHOOK_URL','DISCORD_WEBHOOK_URL'];
+const CUSTOMER_WEBHOOK_PREFIX = 'CUSTOMER_DISCORD_WEBHOOK_URL_';
 function _firstProperty_(keys){ for (const key of keys){ const value = _props().getProperty(key); if (value) return value; } return ''; }
 function _managerDiscordWebhookUrl(){ return _firstProperty_(MANAGER_WEBHOOK_KEYS); }
 function _employeeDiscordWebhookUrl(){ return _firstProperty_(EMPLOYEE_WEBHOOK_KEYS); }
@@ -24,7 +25,7 @@ const SHEETS = {
 const HEADERS = {
   Targets: ['id','targetName','targetId','level','notes','priority','status','claimedBy','claimedAt','submittedAt','reviewStatus','assignedTo','assignedAt','orderId','customer','pricePerSpy','employeeRate','customerPaymentStatus','employeePayoutStatus','createdAt','updatedAt'],
   Submissions: ['id','targetRowId','targetName','targetId','submittedBy','submittedAt','rawText','level','strength','speed','dexterity','defense','total','formatted','reviewStatus','reviewedBy','reviewedAt','warnings','updatedAt'],
-  Orders: ['orderId','customer','requestedBy','orderedAt','targetCount','pricePerSpy','totalPrice','paymentStatus','employeePayoutStatus','newOrderNotifiedAt','newOrderNotificationStatus','completedAt','completionNotifiedAt','completionNotificationStatus','notes','createdAt','updatedAt'],
+  Orders: ['orderId','customer','requestedBy','orderedAt','targetCount','pricePerSpy','totalPrice','paymentStatus','employeePayoutStatus','newOrderNotifiedAt','newOrderNotificationStatus','completedAt','completionNotifiedAt','completionNotificationStatus','orderStatus','paymentRequired','paymentConfirmedAt','paymentConfirmedBy','paymentType','deliveryMode','autoDeliver','customerDeliveryConfigured','deliveredAt','deliveryStatus','deliveryError','notes','createdAt','updatedAt'],
   Customers: ['customer','contact','notes','createdAt','updatedAt'],
   Employees: ['displayName','payoutHandle','defaultRate','notes','createdAt','updatedAt'],
   CustomerPayments: ['id','orderId','customer','amount','status','reference','note','recordedBy','recordedAt','requestId','voidedAt','voidedBy','voidReason'],
@@ -57,7 +58,7 @@ function handleRequest(e, method) {
 
 function dispatch_(action, input) {
   if (action === 'version') return version_();
-  if (action === 'list') return list_();
+  if (action === 'list') return list_(input);
   if (action === 'add') return addTarget_(input);
   if (action === 'bulkAdd') return bulkAddTargets_(input);
   if (action === 'claim') return claimTarget_(input);
@@ -76,6 +77,11 @@ function dispatch_(action, input) {
   if (action === 'setOrderPrice') return setOrderPrice_(input);
   if (action === 'sendNewOrderNotification') return sendNewOrderNotification_(input);
   if (action === 'sendOrderCompleteNotification') return sendOrderCompleteNotification_(input);
+  if (action === 'setOrderAutomation') return setOrderAutomation_(input);
+  if (action === 'recordTornMoneyPayment') return recordTornMoneyPayment_(input);
+  if (action === 'sendCustomerDelivery') return sendCustomerDelivery_(input);
+  if (action === 'markOrderDelivered') return markOrderDelivered_(input);
+  if (action === 'getAutomationDiagnostics') return getAutomationDiagnostics_(input);
   if (action === 'audit') return addAudit_(input.actor || input.employee || 'system', input.auditAction || 'audit', input.targetId || '', input.details || '');
   throw new Error('Unknown action: ' + action);
 }
@@ -85,13 +91,20 @@ function version_() {
     ok: true,
     version: BACKEND_VERSION,
     checkedAt: now_(),
-    actions: ['version','list','customerPayment','voidCustomerPayment','employeePayout','voidEmployeePayout','setOrderPrice','webhookDebug','testDiscordWebhook','sendNewOrderNotification','sendOrderCompleteNotification']
+    actions: ['version','list','customerPayment','voidCustomerPayment','employeePayout','voidEmployeePayout','setOrderPrice','webhookDebug','testDiscordWebhook','sendNewOrderNotification','sendOrderCompleteNotification','setOrderAutomation','recordTornMoneyPayment','sendCustomerDelivery','markOrderDelivered','getAutomationDiagnostics']
   };
 }
 
-function list_() {
+function list_(input) {
   syncAllOrderCompletion_();
-  const targets = readObjects_(SHEETS.targets).map(row => ({
+  const adminOk = isAdminInput_(input);
+  const orders = readObjects_(SHEETS.orders);
+  const orderById = {};
+  orders.forEach(order => { if (order.orderId) orderById[String(order.orderId)] = order; });
+  const targets = readObjects_(SHEETS.targets)
+  .filter(row => adminOk || isOrderVisibleToEmployees_(orderById[String(row.orderId || '')]))
+  .map(row => {
+    const base = {
     id: row.id,
     targetName: row.targetName,
     targetId: row.targetId,
@@ -105,22 +118,45 @@ function list_() {
     reviewStatus: row.reviewStatus || 'pending_review',
     assignedTo: row.assignedTo,
     assignedAt: row.assignedAt,
-    orderId: row.orderId,
-    customer: row.customer,
-    pricePerSpy: num_(row.pricePerSpy),
-    employeeRate: num_(row.employeeRate),
-    customerPaymentStatus: row.customerPaymentStatus || 'unpaid',
-    employeePayoutStatus: row.employeePayoutStatus || 'unpaid',
     payload: latestPayloadForTarget_(row.id),
-  }));
+    };
+    if (adminOk) {
+      base.orderId = row.orderId;
+      base.customer = row.customer;
+      base.pricePerSpy = num_(row.pricePerSpy);
+      base.employeeRate = num_(row.employeeRate);
+      base.customerPaymentStatus = row.customerPaymentStatus || 'unpaid';
+      base.employeePayoutStatus = row.employeePayoutStatus || 'unpaid';
+    }
+    return base;
+  });
   return {
     ok: true,
     tasks: targets,
-    orders: readObjects_(SHEETS.orders),
-    customerPayments: readObjects_(SHEETS.customerPayments),
-    employeePayouts: readObjects_(SHEETS.employeePayouts),
-    deliveryHistory: readObjects_(SHEETS.deliveryHistory),
+    orders: adminOk ? orders.map(sanitizeOrderForClient_) : [],
+    customerPayments: adminOk ? readObjects_(SHEETS.customerPayments) : [],
+    employeePayouts: adminOk ? readObjects_(SHEETS.employeePayouts) : [],
+    deliveryHistory: adminOk ? readObjects_(SHEETS.deliveryHistory) : [],
   };
+}
+
+function isAdminInput_(input) {
+  const expected = _adminKey();
+  return !!expected && String(input && input.admin || '') === expected;
+}
+
+function sanitizeOrderForClient_(order) {
+  const copy = Object.assign({}, order || {});
+  delete copy.customerDeliveryWebhookUrl;
+  copy.customerDeliveryConfigured = bool_(copy.customerDeliveryConfigured) || !!customerWebhookForOrder_(copy.orderId, copy.customer);
+  copy.orderStatus = normalizeOrderStatus_(copy);
+  return copy;
+}
+
+function isOrderVisibleToEmployees_(order) {
+  if (!order) return true;
+  const status = normalizeOrderStatus_(order);
+  return ['ready_for_work','in_progress','pending_review','ready_to_deliver'].indexOf(status) !== -1;
 }
 
 function addTarget_(input) {
@@ -147,6 +183,10 @@ function addTarget_(input) {
     employeeRate: input.employeeRate || '',
     customerPaymentStatus: input.customerPaymentStatus || 'unpaid',
     employeePayoutStatus: input.employeePayoutStatus || 'unpaid',
+    paymentRequired: bool_(input.paymentRequired),
+    paymentType: input.paymentType || 'money',
+    deliveryMode: input.deliveryMode || 'manual',
+    autoDeliver: bool_(input.autoDeliver),
     createdAt: now,
     updatedAt: now,
   };
@@ -189,6 +229,10 @@ function bulkAddTargets_(input) {
       employeeRate: item.employeeRate || '',
       customerPaymentStatus: item.customerPaymentStatus || 'unpaid',
       employeePayoutStatus: item.employeePayoutStatus || 'unpaid',
+      paymentRequired: bool_(item.paymentRequired) || bool_(input.paymentRequired),
+      paymentType: item.paymentType || input.paymentType || 'money',
+      deliveryMode: item.deliveryMode || input.deliveryMode || 'manual',
+      autoDeliver: bool_(item.autoDeliver) || bool_(input.autoDeliver),
       createdAt: now,
       updatedAt: now,
     };
@@ -360,8 +404,21 @@ function recordCustomerPayment_(input) {
     voidReason: '',
   });
   recalculateOrderPaymentFromPayments_(input.orderId);
+  confirmOrderPaymentIfPaid_(input.orderId, input.employee || 'manager');
   addAudit_(input.employee || 'manager', 'customer_payment_' + (input.status || 'paid'), input.orderId || '', input.customer || '');
   return { ok:true, paymentId:paymentId, amount:amount };
+}
+
+function recordTornMoneyPayment_(input) {
+  requireAdmin_(input);
+  const payload = Object.assign({}, input, {
+    status: input.status || 'paid',
+    reference: input.reference || input.tornReference || 'Torn money',
+    note: input.note || 'Manual Torn-money payment confirmation'
+  });
+  const result = recordCustomerPayment_(payload);
+  if (!result.duplicate) addAudit_(input.employee || 'manager', 'torn_money_payment_confirmed', input.orderId || '', result.amount || '');
+  return Object.assign({}, result, { paymentType:'money' });
 }
 
 function voidCustomerPayment_(input) {
@@ -572,6 +629,8 @@ function upsertOrderFromTarget_(target) {
   const rows = readObjectsWithRows_(SHEETS.orders);
   const existing = rows.find(r => String(r.orderId) === String(target.orderId));
   const now = now_();
+  const paymentRequired = bool_(target.paymentRequired);
+  const baseStatus = paymentRequired ? 'awaiting_payment' : 'ready_for_work';
   if (!existing) {
     appendObject_(SHEETS.orders, {
       orderId: target.orderId,
@@ -588,6 +647,17 @@ function upsertOrderFromTarget_(target) {
       completedAt: '',
       completionNotifiedAt: '',
       completionNotificationStatus: '',
+      orderStatus: baseStatus,
+      paymentRequired: paymentRequired ? 'true' : '',
+      paymentConfirmedAt: '',
+      paymentConfirmedBy: '',
+      paymentType: target.paymentType || 'money',
+      deliveryMode: target.deliveryMode || 'manual',
+      autoDeliver: bool_(target.autoDeliver) ? 'true' : '',
+      customerDeliveryConfigured: customerWebhookForOrder_(target.orderId, target.customer) ? 'true' : '',
+      deliveredAt: '',
+      deliveryStatus: '',
+      deliveryError: '',
       notes: '',
       createdAt: now,
       updatedAt: now,
@@ -595,11 +665,15 @@ function upsertOrderFromTarget_(target) {
     return;
   }
   const targets = readObjects_(SHEETS.targets).filter(r => String(r.orderId) === String(target.orderId));
-  writeObjectAtRow_(sheet_(SHEETS.orders), existing._row, {
+  const updates = {
     targetCount: targets.length,
     totalPrice: targets.reduce((sum, row) => sum + num_(row.pricePerSpy), 0),
     updatedAt: now,
-  });
+  };
+  if (paymentRequired && !bool_(existing.paymentRequired)) updates.paymentRequired = 'true';
+  if (!existing.orderStatus) updates.orderStatus = normalizeOrderStatus_(Object.assign({}, existing, updates));
+  if (!existing.customerDeliveryConfigured && customerWebhookForOrder_(target.orderId, target.customer)) updates.customerDeliveryConfigured = 'true';
+  writeObjectAtRow_(sheet_(SHEETS.orders), existing._row, updates);
 }
 
 function getOrderTargets_(orderId) {
@@ -614,6 +688,22 @@ function calculateOrderCompletion_(orderId) {
   const totalPrice = targets.reduce((sum, row) => sum + num_(row.pricePerSpy), 0);
   const customer = (targets.find(t => t.customer) || {}).customer || '';
   return { orderId, customer, total, approved, complete, totalPrice };
+}
+
+function normalizeOrderStatus_(order) {
+  const status = String(order && order.orderStatus || '').trim();
+  if (['closed','cancelled','delivered'].indexOf(status) !== -1) return status;
+  if (bool_(order && order.paymentRequired) && String(order && order.paymentStatus || 'unpaid') !== 'paid') return 'awaiting_payment';
+  if (order && order.deliveredAt) return 'delivered';
+  if (order && order.completedAt) return 'ready_to_deliver';
+  const orderId = order && order.orderId;
+  if (orderId) {
+    const targets = getOrderTargets_(orderId);
+    if (targets.some(t => String(t.status || '') === 'submitted' && String(t.reviewStatus || 'pending_review') === 'pending_review')) return 'pending_review';
+    if (targets.some(t => ['claimed','assigned'].indexOf(String(t.status || '')) !== -1 || String(t.claimedBy || '').trim())) return 'in_progress';
+    if (targets.length) return 'ready_for_work';
+  }
+  return status || 'intake';
 }
 
 function ensureOrderRow_(orderId) {
@@ -640,6 +730,17 @@ function ensureOrderRow_(orderId) {
     completedAt: '',
     completionNotifiedAt: '',
     completionNotificationStatus: '',
+    orderStatus: first.customerPaymentStatus === 'paid' ? 'ready_for_work' : 'ready_for_work',
+    paymentRequired: '',
+    paymentConfirmedAt: '',
+    paymentConfirmedBy: '',
+    paymentType: 'money',
+    deliveryMode: 'manual',
+    autoDeliver: '',
+    customerDeliveryConfigured: customerWebhookForOrder_(orderId, first.customer) ? 'true' : '',
+    deliveredAt: '',
+    deliveryStatus: '',
+    deliveryError: '',
     notes: '',
     createdAt: now,
     updatedAt: now,
@@ -664,6 +765,8 @@ function syncOrderCompletion_(orderId) {
     updates.completionNotifiedAt = '';
     updates.completionNotificationStatus = '';
   }
+  updates.customerDeliveryConfigured = customerWebhookForOrder_(orderId, completion.customer || order.customer) ? 'true' : '';
+  updates.orderStatus = normalizeOrderStatus_(Object.assign({}, order, updates));
   writeObjectAtRow_(sheet_(SHEETS.orders), order._row, updates);
   return Object.assign({}, order, updates, completion);
 }
@@ -706,6 +809,11 @@ function autoSendOrderCompletionIfReady_(orderId, actor) {
   postDiscord_(webhookUrl, content);
   writeObjectAtRow_(sheet_(SHEETS.orders), row._row, updates);
   addAudit_(actor || 'system', 'order_completion_notified_auto', orderId, synced.customer || '');
+  try {
+    maybeAutoDeliverOrder_(orderId, actor || 'system');
+  } catch (err) {
+    addAudit_(actor || 'system', 'order_auto_delivery_failed', orderId, String(err && err.message || err));
+  }
   return { ok:true, notified:true, status:updates.completionNotificationStatus };
 }
 
@@ -757,6 +865,13 @@ function sendOrderCompleteNotification_(input) {
 
   writeObjectAtRow_(sheet_(SHEETS.orders), row._row, updates);
   addAudit_(actor, statusOnly ? 'order_completion_marked_sent' : 'order_completion_notified', orderId, synced.customer || '');
+  if (!statusOnly) {
+    try {
+      maybeAutoDeliverOrder_(orderId, actor);
+    } catch (err) {
+      addAudit_(actor, 'order_auto_delivery_failed', orderId, String(err && err.message || err));
+    }
+  }
   return { ok:true, notified:!statusOnly, status:updates.completionNotificationStatus };
 }
 
@@ -769,6 +884,10 @@ function sendNewOrderNotification_(input) {
   const row = ensureOrderRow_(orderId);
   if (!row) throw new Error('Order not found.');
   const actor = input.actor || input.employee || 'manager';
+  const orderStatus = normalizeOrderStatus_(row);
+  if (orderStatus === 'awaiting_payment' || orderStatus === 'intake') {
+    return { ok:true, notified:false, status:orderStatus };
+  }
   const alreadySent = row.newOrderNotifiedAt && row.newOrderNotificationStatus === 'sent';
   if (alreadySent) return { ok:true, skipped:true, status:'already_sent' };
 
@@ -798,6 +917,211 @@ function sendNewOrderNotification_(input) {
   writeObjectAtRow_(sheet_(SHEETS.orders), row._row, updates);
   addAudit_(actor, 'new_order_notified', orderId, synced.customer || row.customer || '');
   return { ok:true, notified:true, status:'sent' };
+}
+
+function setOrderAutomation_(input) {
+  requireAdmin_(input);
+  const orderId = String(input.orderId || '').trim();
+  if (!orderId) throw new Error('orderId is required.');
+  const row = ensureOrderRow_(orderId);
+  if (!row) throw new Error('Order not found.');
+  const submittedWebhook = String(input.customerWebhookUrl || '').trim();
+  if (submittedWebhook) {
+    if (!/^https:\/\/discord\.com\/api\/webhooks\//i.test(submittedWebhook)) throw new Error('Customer webhook must be a Discord webhook URL.');
+    _props().setProperty(CUSTOMER_WEBHOOK_PREFIX + normalizePropertyKey_(orderId), submittedWebhook);
+  }
+  const updates = {
+    paymentRequired: bool_(input.paymentRequired) ? 'true' : '',
+    paymentType: input.paymentType || row.paymentType || 'money',
+    deliveryMode: input.deliveryMode || row.deliveryMode || 'manual',
+    autoDeliver: bool_(input.autoDeliver) ? 'true' : '',
+    customerDeliveryConfigured: customerWebhookForOrder_(orderId, row.customer) ? 'true' : '',
+    updatedAt: now_(),
+  };
+  updates.orderStatus = normalizeOrderStatus_(Object.assign({}, row, updates));
+  writeObjectAtRow_(sheet_(SHEETS.orders), row._row, updates);
+  addAudit_(input.actor || input.employee || 'manager', 'order_automation_set', orderId, JSON.stringify({
+    paymentRequired: !!updates.paymentRequired,
+    paymentType: updates.paymentType,
+    deliveryMode: updates.deliveryMode,
+    autoDeliver: !!updates.autoDeliver,
+    customerWebhookUpdated: !!submittedWebhook
+  }));
+  if (updates.orderStatus === 'ready_for_work') maybeSendNewOrderNotification_(orderId, input.actor || input.employee || 'manager');
+  return { ok:true, orderId:orderId, orderStatus:updates.orderStatus };
+}
+
+function confirmOrderPaymentIfPaid_(orderId, actor) {
+  if (!orderId) return;
+  const row = ensureOrderRow_(orderId);
+  if (!row) return;
+  const latest = readObjectsWithRows_(SHEETS.orders).find(r => String(r.orderId || '') === String(orderId || '')) || row;
+  if (String(latest.paymentStatus || '') !== 'paid') return;
+  const updates = {
+    paymentConfirmedAt: latest.paymentConfirmedAt || now_(),
+    paymentConfirmedBy: latest.paymentConfirmedBy || actor || 'manager',
+    orderStatus: normalizeOrderStatus_(latest),
+    updatedAt: now_(),
+  };
+  writeObjectAtRow_(sheet_(SHEETS.orders), latest._row, updates);
+  addAudit_(actor || 'manager', 'order_payment_confirmed', orderId, latest.paymentStatus || 'paid');
+  maybeSendNewOrderNotification_(orderId, actor || 'manager');
+}
+
+function maybeSendNewOrderNotification_(orderId, actor) {
+  const row = ensureOrderRow_(orderId);
+  if (!row) return { ok:true, skipped:true, status:'order_missing' };
+  const normalized = normalizeOrderStatus_(row);
+  if (normalized === 'awaiting_payment' || normalized === 'intake') return { ok:true, skipped:true, status:normalized };
+  if (row.newOrderNotifiedAt && row.newOrderNotificationStatus === 'sent') return { ok:true, skipped:true, status:'already_sent' };
+  try {
+    return sendNewOrderNotification_({ orderId:orderId, admin:_adminKey(), actor:actor || 'system' });
+  } catch (err) {
+    addAudit_(actor || 'system', 'new_order_auto_notify_failed', orderId, String(err && err.message || err));
+    return { ok:false, status:'failed', error:String(err && err.message || err) };
+  }
+}
+
+function sendCustomerDelivery_(input) {
+  requireAdmin_(input);
+  const orderId = String(input.orderId || '').trim();
+  if (!orderId) throw new Error('orderId is required.');
+  const synced = syncOrderCompletion_(orderId);
+  if (!synced || !synced.complete) throw new Error('Order is not ready to deliver.');
+  const actor = input.actor || input.employee || 'manager';
+  const row = ensureOrderRow_(orderId);
+  const webhookUrl = customerWebhookForOrder_(orderId, synced.customer || row.customer);
+  if (!webhookUrl) {
+    markDeliveryFailed_(row, 'customer_webhook_missing', actor);
+    return { ok:true, delivered:false, status:'customer_webhook_missing' };
+  }
+  const message = buildCustomerDeliveryMessage_(orderId);
+  try {
+    postDiscord_(webhookUrl, message);
+    markOrderDeliveredInternal_(orderId, actor, 'discord_webhook');
+    return { ok:true, delivered:true, status:'sent' };
+  } catch (err) {
+    markDeliveryFailed_(row, String(err && err.message || err), actor);
+    throw err;
+  }
+}
+
+function markOrderDelivered_(input) {
+  requireAdmin_(input);
+  const orderId = String(input.orderId || '').trim();
+  if (!orderId) throw new Error('orderId is required.');
+  markOrderDeliveredInternal_(orderId, input.actor || input.employee || 'manager', input.deliveryMode || 'manual');
+  return { ok:true, orderId:orderId, status:'delivered' };
+}
+
+function getAutomationDiagnostics_(input) {
+  requireAdmin_(input);
+  syncAllOrderCompletion_();
+  const orders = readObjects_(SHEETS.orders).map(sanitizeOrderForClient_);
+  return {
+    ok:true,
+    checkedAt: now_(),
+    counts: {
+      needsPayment: orders.filter(o => normalizeOrderStatus_(o) === 'awaiting_payment').length,
+      readyForWork: orders.filter(o => normalizeOrderStatus_(o) === 'ready_for_work').length,
+      readyToDeliver: orders.filter(o => normalizeOrderStatus_(o) === 'ready_to_deliver').length,
+      deliveryFailed: orders.filter(o => String(o.deliveryStatus || '') === 'failed').length
+    },
+    customerWebhookConfigured: orders.filter(o => bool_(o.customerDeliveryConfigured)).length
+  };
+}
+
+function maybeAutoDeliverOrder_(orderId, actor) {
+  const row = ensureOrderRow_(orderId);
+  if (!row || !bool_(row.autoDeliver)) return { ok:true, skipped:true, status:'manual_delivery' };
+  return sendCustomerDelivery_({ orderId:orderId, admin:_adminKey(), actor:actor || 'system' });
+}
+
+function markOrderDeliveredInternal_(orderId, actor, mode) {
+  const row = ensureOrderRow_(orderId);
+  if (!row) throw new Error('Order not found.');
+  writeObjectAtRow_(sheet_(SHEETS.orders), row._row, {
+    orderStatus: 'delivered',
+    deliveredAt: now_(),
+    deliveryStatus: 'sent',
+    deliveryError: '',
+    deliveryMode: mode || row.deliveryMode || 'manual',
+    updatedAt: now_(),
+  });
+  addAudit_(actor || 'manager', 'order_delivered', orderId, mode || 'manual');
+}
+
+function markDeliveryFailed_(row, error, actor) {
+  if (!row) return;
+  writeObjectAtRow_(sheet_(SHEETS.orders), row._row, {
+    deliveryStatus: 'failed',
+    deliveryError: error || 'Unknown delivery error',
+    updatedAt: now_(),
+  });
+  addAudit_(actor || 'manager', 'order_delivery_failed', row.orderId || '', error || '');
+}
+
+function customerWebhookForOrder_(orderId, customer) {
+  const props = _props();
+  const candidates = [
+    CUSTOMER_WEBHOOK_PREFIX + normalizePropertyKey_(orderId),
+    CUSTOMER_WEBHOOK_PREFIX + normalizePropertyKey_(customer)
+  ].filter(key => key && key !== CUSTOMER_WEBHOOK_PREFIX);
+  for (const key of candidates) {
+    const value = props.getProperty(key);
+    if (value) return value;
+  }
+  return '';
+}
+
+function normalizePropertyKey_(value) {
+  return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+
+function buildCustomerDeliveryMessage_(orderId) {
+  const synced = calculateOrderCompletion_(orderId);
+  const row = ensureOrderRow_(orderId) || {};
+  const targets = getOrderTargets_(orderId);
+  const approved = targets.filter(t => String(t.status || '') === 'submitted' && String(t.reviewStatus || '') === 'approved');
+  if (!approved.length) throw new Error('No approved results in this order.');
+  const results = approved.map(t => {
+    const payload = latestPayloadForTarget_(t.id) || {};
+    return payload.formatted || formatPayloadForDelivery_(t, payload);
+  }).join('\n\n');
+  const lines = [
+    'Hi ' + (synced.customer || row.customer || 'there') + ',',
+    '',
+    'Your order ' + orderId + ' is complete.',
+    '',
+    'Delivered spies: ' + approved.length,
+    'Total: ' + targets.length + ' spies'
+  ];
+  if (synced.totalPrice) lines.push('Price total: ' + Number(synced.totalPrice).toLocaleString());
+  lines.push('', 'Results:', '', results);
+  return lines.join('\n');
+}
+
+function formatPayloadForDelivery_(target, payload) {
+  const fmt = function(value){ return value === '' || value == null ? 'N/A' : Number(value).toLocaleString(); };
+  const name = payload.name || target.targetName || 'Unknown';
+  const id = payload.targetId || target.targetId || '';
+  return [
+    'Name:' + name + (id ? ' [' + id + ']' : ''),
+    '',
+    'Level:' + (payload.level || target.level || '?'),
+    '',
+    'You managed to get the following results:',
+    '',
+    'Strength: ' + fmt(payload.strength),
+    '',
+    'Speed: ' + fmt(payload.speed),
+    '',
+    'Dexterity: ' + fmt(payload.dexterity),
+    '',
+    'Defense: ' + fmt(payload.defense),
+    '',
+    'Total: ' + fmt(payload.total)
+  ].join('\n');
 }
 
 function ensureExternalRequestAuthorized_() {
@@ -885,10 +1209,17 @@ function recalculateOrderPaymentFromPayments_(orderId) {
     .filter(payment => ['paid','partial'].indexOf(String(payment.status || '').toLowerCase()) !== -1);
   const paidAmount = active.reduce((sum, payment) => sum + num_(payment.amount), 0);
   const totalPrice = num_(row.totalPrice);
+  const explicitPaid = active.some(payment => String(payment.status || '').toLowerCase() === 'paid');
   let status = 'unpaid';
   if (paidAmount > 0 && totalPrice > 0 && paidAmount >= totalPrice) status = 'paid';
+  else if (paidAmount > 0 && !totalPrice && explicitPaid) status = 'paid';
   else if (paidAmount > 0) status = 'partial';
-  writeObjectAtRow_(sheet_(SHEETS.orders), row._row, { paymentStatus: status, updatedAt: now_() });
+  const updates = { paymentStatus: status, updatedAt: now_() };
+  if (status === 'paid') {
+    updates.paymentConfirmedAt = row.paymentConfirmedAt || now_();
+    updates.orderStatus = normalizeOrderStatus_(Object.assign({}, row, updates));
+  }
+  writeObjectAtRow_(sheet_(SHEETS.orders), row._row, updates);
 }
 
 function calculateTargetEmployeePayoutStatus_(targetRowId) {
@@ -1068,4 +1399,10 @@ function numOrBlank_(value) {
   if (value === '' || value == null) return '';
   const n = Number(value);
   return Number.isFinite(n) ? n : value;
+}
+
+function bool_(value) {
+  if (value === true) return true;
+  const text = String(value || '').trim().toLowerCase();
+  return ['true','1','yes','y','on','paid','enabled'].indexOf(text) !== -1;
 }

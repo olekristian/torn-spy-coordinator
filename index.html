@@ -441,6 +441,20 @@ body:not(.is-admin) .manager-only { display:none !important; }
 
     <section id="tab-manage" class="manager-only" hidden>
       <div id="manager-summary" class="dashboard"></div>
+      <details class="manager-accordion" id="automation-card" open>
+        <summary>Automation</summary>
+        <div class="manager-section-body">
+          <div class="card"><div class="hd">Order Automation Queues</div><div class="bd grid">
+            <div class="muted">Manager-only automation for Torn-money payment confirmation, employee Discord notifications, and customer delivery. Webhook URLs stay server-side.</div>
+            <div class="row">
+              <button id="check-automation" class="secondary">Check automation</button>
+              <span id="automation-diagnostics" class="muted"></span>
+            </div>
+            <div id="automation-queues" class="grid"></div>
+          </div></div>
+        </div>
+      </details>
+
       <details class="manager-accordion" open>
         <summary>Order Intake</summary>
         <div class="manager-section-body">
@@ -453,6 +467,10 @@ body:not(.is-admin) .manager-only { display:none !important; }
           <input id="m-customer" placeholder="Customer" style="width:160px">
           <input id="m-price" type="number" min="0" step="1" placeholder="Customer price" style="width:150px">
           <input id="m-rate" type="number" min="0" step="1" placeholder="Employee rate" style="width:150px">
+          <select id="m-payment-required" title="Payment gate">
+            <option value="">Work before payment</option>
+            <option value="true">Require Torn money first</option>
+          </select>
           <select id="m-priority">
             <option value="normal">Normal</option>
             <option value="rush">Rush</option>
@@ -474,6 +492,10 @@ body:not(.is-admin) .manager-only { display:none !important; }
           <input id="bulk-note" placeholder="Note added to all imported targets" style="flex:1">
           <input id="bulk-price" type="number" min="0" step="1" placeholder="Customer price each" style="width:160px">
           <input id="bulk-rate" type="number" min="0" step="1" placeholder="Employee rate each" style="width:160px">
+          <select id="bulk-payment-required" title="Payment gate">
+            <option value="">Work before payment</option>
+            <option value="true">Require Torn money first</option>
+          </select>
         </div>
         <textarea id="m-bulk" placeholder="One target per line. Use name | id | notes | priority, name, id, notes, priority, tab-separated values, Name [ID], or profile URLs."></textarea>
         <div class="row">
@@ -656,7 +678,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
 
 <script>
 const DEFAULT_API = "https://script.google.com/macros/s/AKfycbwmvn4x0wmHDllT-IYWINU1OI-DG9Hdk_sEhZUQKmsqJA16y9yOOnAHjJ6NGIqI9WTQ/exec";
-const APP_FRONTEND_VERSION = "2026-06-12-finance-v2";
+const APP_FRONTEND_VERSION = "2026-06-13-automation-v1";
 const DEFAULT_KEY = "";
 const STALE_WARNING_MINUTES = 30;
 const STALE_DANGER_MINUTES = 60;
@@ -759,6 +781,7 @@ const state={
   orders: [],
   customerPayments: [],
   employeePayouts: [],
+  automationDiagnostics: null,
   webhookDiagnostics: null,
   backendDiagnostics: null,
   torn: { apiKey:"", verified:null, logMatches:{} },
@@ -1280,6 +1303,7 @@ function enforceVisibility(){
   const auditCard = document.getElementById('audit-card'); if(auditCard) auditCard.style.display = isAdminUI ? '' : 'none';
   const historyCard = document.getElementById('history-card'); if(historyCard) historyCard.style.display = isAdminUI ? '' : 'none';
   const ledgerCard = document.getElementById('ledger-card'); if(ledgerCard) ledgerCard.style.display = isAdminUI ? '' : 'none';
+  const automationCard = document.getElementById('automation-card'); if(automationCard) automationCard.style.display = isAdminUI ? '' : 'none';
   const manageBtn = document.getElementById('tab-manage-btn'); if(manageBtn) manageBtn.style.display = isAdminUI ? '' : 'none';
   const tabManage = document.getElementById('tab-manage'); if(tabManage) tabManage.hidden = !isAdminUI;
 
@@ -1303,6 +1327,7 @@ function render(){
   renderHistory();
   renderLedger();
   renderCompletedOrders();
+  renderAutomationQueues();
   renderBackendDiagnostics();
   renderWebhookDiagnostics();
   renderKnownOrders();
@@ -1872,6 +1897,87 @@ function renderCompletedOrders(){
       addButton(row, 'Send new order Discord', () => sendNewOrderNotification(order.orderId), newOrderStatus === 'sent');
       el.appendChild(card);
     });
+}
+
+function renderAutomationQueues(){
+  const el = qs('#automation-queues');
+  const diag = qs('#automation-diagnostics');
+  if (!el) return;
+  if (!state.adminVerified) {
+    el.innerHTML = '';
+    if (diag) diag.textContent = '';
+    return;
+  }
+  if (diag) {
+    const counts = state.automationDiagnostics && state.automationDiagnostics.counts;
+    diag.textContent = counts
+      ? `Needs payment: ${counts.needsPayment} · Ready for work: ${counts.readyForWork} · Ready to deliver: ${counts.readyToDeliver} · Delivery failed: ${counts.deliveryFailed}`
+      : 'Automation diagnostics not checked this session.';
+  }
+  const groups = [
+    ['Needs payment', order => order.status === 'awaiting_payment'],
+    ['Ready for work', order => order.status === 'ready_for_work'],
+    ['Ready to deliver', order => order.status === 'ready_to_deliver'],
+    ['Delivery failed', order => String(order.order.deliveryStatus || '') === 'failed']
+  ];
+  const orders = getAutomationQueueOrders();
+  el.innerHTML = groups.map(([title, predicate]) => {
+    const rows = orders.filter(predicate);
+    return `<div class="automation-group">
+      <div class="employee-section-title">${escapeHtml(title)} <span class="muted">(${rows.length})</span></div>
+      <div class="grid">${rows.length ? rows.map(renderAutomationOrderHtml).join('') : '<div class="muted">No orders in this queue.</div>'}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderAutomationOrderHtml(order){
+  const priceMissing = !order.totalPrice;
+  const deliveryConfigured = truthy(order.order.customerDeliveryConfigured);
+  const autoDeliver = truthy(order.order.autoDeliver);
+  const paymentRequired = truthy(order.order.paymentRequired);
+  const paymentStatus = order.order.paymentStatus || 'unpaid';
+  const deliveryStatus = order.order.deliveryStatus || 'not sent';
+  return `<div class="card"><div class="bd">
+    <div class="target-title">
+      <div>
+        <div style="font-weight:700">Order ${escapeHtml(order.orderId)}</div>
+        <div class="muted">${escapeHtml(order.customer || 'No customer')} · ${order.approved} / ${order.total} approved</div>
+      </div>
+      <span class="pill status-${escapeHtml(order.status)}">${escapeHtml(order.status.replaceAll('_',' ').toUpperCase())}</span>
+    </div>
+    <div class="chip-row">
+      <span class="pill ${paymentStatus === 'paid' ? 'status-approved' : 'status-warning'}">Payment: ${escapeHtml(paymentStatus)}</span>
+      ${paymentRequired ? '<span class="pill status-warning">Payment required</span>' : '<span class="pill">Work before payment</span>'}
+      ${priceMissing ? '<span class="pill status-warning">Price missing</span>' : `<span class="pill">Price: ${formatMoney(order.totalPrice)}</span>`}
+      <span class="pill ${deliveryConfigured ? 'status-approved' : 'status-warning'}">Customer webhook: ${deliveryConfigured ? 'configured' : 'missing'}</span>
+      <span class="pill">Auto deliver: ${autoDeliver ? 'on' : 'off'}</span>
+      <span class="pill">Delivery: ${escapeHtml(deliveryStatus)}</span>
+    </div>
+    ${order.order.deliveryError ? `<div class="muted warn-text" style="margin-top:8px">${escapeHtml(order.order.deliveryError)}</div>` : ''}
+    <div class="price-tools">
+      <select data-auto-payment-required="${escapeHtml(order.orderId)}">
+        <option value="" ${paymentRequired ? '' : 'selected'}>Work before payment</option>
+        <option value="true" ${paymentRequired ? 'selected' : ''}>Require Torn money first</option>
+      </select>
+      <select data-auto-deliver="${escapeHtml(order.orderId)}">
+        <option value="" ${autoDeliver ? '' : 'selected'}>Manual customer delivery</option>
+        <option value="true" ${autoDeliver ? 'selected' : ''}>Auto-deliver to customer webhook</option>
+      </select>
+      <input placeholder="${deliveryConfigured ? 'Customer webhook configured' : 'Paste customer Discord webhook to store'}" data-customer-webhook="${escapeHtml(order.orderId)}">
+      <button class="secondary set-order-automation" data-order-id="${escapeHtml(order.orderId)}">Save automation</button>
+    </div>
+    <div class="price-tools">
+      <input type="number" min="0" step="1" placeholder="Torn money received" data-torn-money="${escapeHtml(order.orderId)}">
+      <input placeholder="Payment reference / note" data-torn-ref="${escapeHtml(order.orderId)}">
+      <button class="record-torn-money" data-order-id="${escapeHtml(order.orderId)}" ${state.busyActions['tornMoney:' + order.orderId] ? 'disabled' : ''}>${state.busyActions['tornMoney:' + order.orderId] ? 'Recording...' : 'Confirm Torn money'}</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="copy-order-results" data-order-id="${escapeHtml(order.orderId)}" ${order.approved < 1 ? 'disabled' : ''}>Copy customer message</button>
+      <button class="send-customer-delivery" data-order-id="${escapeHtml(order.orderId)}" ${(!order.complete || !deliveryConfigured) ? 'disabled' : ''}>Send customer delivery</button>
+      <button class="mark-order-delivered secondary" data-order-id="${escapeHtml(order.orderId)}" ${!order.complete ? 'disabled' : ''}>Mark delivered</button>
+      <button class="send-new-order secondary" data-order-id="${escapeHtml(order.orderId)}" ${order.status === 'awaiting_payment' || order.order.newOrderNotificationStatus === 'sent' ? 'disabled' : ''}>Notify employees</button>
+    </div>
+  </div></div>`;
 }
 
 function renderBackendDiagnostics(){
@@ -2724,6 +2830,8 @@ function validateTargetImport(raw){
     item.customer = item.customer || defaults.customer;
     item.pricePerSpy = item.pricePerSpy || defaults.pricePerSpy;
     item.employeeRate = item.employeeRate || defaults.employeeRate;
+    item.paymentRequired = item.paymentRequired || defaults.paymentRequired;
+    item.paymentType = 'money';
     const id = String(item.targetId || '').trim();
     const key = id || item.targetName.toLowerCase();
     let status = 'New';
@@ -2762,6 +2870,8 @@ function getBulkDefaults(){
     note: (qs('#bulk-note')?.value || '').trim(),
     pricePerSpy: (qs('#bulk-price')?.value || '').trim(),
     employeeRate: (qs('#bulk-rate')?.value || '').trim(),
+    paymentRequired: (qs('#bulk-payment-required')?.value || '') === 'true',
+    paymentType: 'money',
     requireExistingOrder: !!qs('#m-existing-order-only')?.checked
   };
 }
@@ -3370,7 +3480,7 @@ async function importTargets(){
   const failed = [];
   setImportProgress(0, unique.length, 'Sending batch to Google Sheet...');
   try{
-    batchResult = await call('', 'POST', { action:'bulkAdd', targets:unique, employee:state.me.trim(), requireExistingOrder: !!qs('#m-existing-order-only')?.checked });
+    batchResult = await call('', 'POST', { action:'bulkAdd', targets:unique, employee:state.me.trim(), paymentRequired: (qs('#bulk-payment-required')?.value || '') === 'true', paymentType:'money', requireExistingOrder: !!qs('#m-existing-order-only')?.checked });
     added = Number(batchResult.added || unique.length);
     unique.forEach(item => addAuditLog('target_added', item.targetId, item.targetName));
     setImportProgress(added, unique.length, 'Batch import complete.');
@@ -3383,7 +3493,7 @@ async function importTargets(){
   }
   for (const item of failed.length ? unique : []) {
     try{
-      await call('', 'POST', { action:'add', targetName:item.targetName, targetId:item.targetId, level:item.level, notes:item.notes, priority:item.priority, orderId:item.orderId, customer:item.customer, pricePerSpy:item.pricePerSpy, employeeRate:item.employeeRate, requireExistingOrder: !!qs('#m-existing-order-only')?.checked });
+      await call('', 'POST', { action:'add', targetName:item.targetName, targetId:item.targetId, level:item.level, notes:item.notes, priority:item.priority, orderId:item.orderId, customer:item.customer, pricePerSpy:item.pricePerSpy, employeeRate:item.employeeRate, paymentRequired:!!item.paymentRequired, paymentType:'money', requireExistingOrder: !!qs('#m-existing-order-only')?.checked });
       addAuditLog('target_added', item.targetId, item.targetName);
       added += 1;
       setImportProgress(added, unique.length, 'Imported ' + item.targetName);
@@ -3433,6 +3543,7 @@ async function addTask(){
   const customer=(qs('#m-customer')?.value||'').trim();
   const pricePerSpy=(qs('#m-price')?.value||'').trim();
   const employeeRate=(qs('#m-rate')?.value||'').trim();
+  const paymentRequired=(qs('#m-payment-required')?.value||'') === 'true';
   if(!name){ alert('Please enter a target name'); return; }
   if(requireExistingOrder && !orderId){
     setStatus('Add blocked: pick an existing ongoing order ID.');
@@ -3447,7 +3558,7 @@ async function addTask(){
     return;
   }
   try{
-    const result = await call('', 'POST', {action:'add', targetName:name, targetId:tid, level, notes, priority, orderId, customer, pricePerSpy, employeeRate, requireExistingOrder});
+    const result = await call('', 'POST', {action:'add', targetName:name, targetId:tid, level, notes, priority, orderId, customer, pricePerSpy, employeeRate, paymentRequired, paymentType:'money', requireExistingOrder});
     addAuditLog('target_added', tid, name);
     if (result && result.orderId) setStatus('Target added to order ' + result.orderId + '.');
     qs('#m-name').value=''; qs('#m-id').value=''; qs('#m-notes').value=''; await refresh();
@@ -3558,6 +3669,32 @@ function getOrderCompletion(orderId){
     customer,
     totalPrice
   };
+}
+
+function truthy(value){
+  if (value === true) return true;
+  return ['true','1','yes','on','enabled'].includes(String(value || '').trim().toLowerCase());
+}
+
+function getOrderStatus(orderId){
+  const order = getOrderMeta(orderId);
+  if (order.orderStatus) return String(order.orderStatus);
+  const completion = getOrderCompletion(orderId);
+  if (truthy(order.paymentRequired) && String(order.paymentStatus || 'unpaid') !== 'paid') return 'awaiting_payment';
+  if (order.deliveredAt || order.deliveryStatus === 'sent') return 'delivered';
+  if (completion.complete || order.completedAt) return 'ready_to_deliver';
+  if (completion.tasks.some(t => t.status === 'submitted' && getReview(t).status === 'pending_review')) return 'pending_review';
+  if (completion.tasks.some(t => t.status === 'claimed' || t.claimedBy)) return 'in_progress';
+  if (completion.tasks.length) return 'ready_for_work';
+  return 'intake';
+}
+
+function getAutomationQueueOrders(){
+  return getKnownOrderIds().map(orderId => {
+    const completion = getOrderCompletion(orderId);
+    const financial = getOrderFinancialSummary(orderId);
+    return Object.assign({}, completion, { status:getOrderStatus(orderId), financial });
+  });
 }
 
 function getOrderFinancialSummary(orderId){
@@ -3689,6 +3826,111 @@ async function sendNewOrderNotification(orderId){
   }
 }
 
+async function setOrderAutomation(orderId){
+  const paymentSelect = document.querySelector(attrEqualsSelector('data-auto-payment-required', orderId));
+  const autoSelect = document.querySelector(attrEqualsSelector('data-auto-deliver', orderId));
+  const customerWebhookInput = document.querySelector(attrEqualsSelector('data-customer-webhook', orderId));
+  try{
+    const result = await call('', 'POST', {
+      action:'setOrderAutomation',
+      orderId,
+      paymentRequired: paymentSelect && paymentSelect.value === 'true',
+      paymentType:'money',
+      deliveryMode: autoSelect && autoSelect.value === 'true' ? 'discord_webhook' : 'manual',
+      autoDeliver: autoSelect && autoSelect.value === 'true',
+      customerWebhookUrl: (customerWebhookInput && customerWebhookInput.value || '').trim(),
+      actor: state.me || 'manager'
+    });
+    addAuditLog('manager_set_order_automation', orderId, result.orderStatus || '');
+    await refresh();
+    setStatus('Automation saved for order ' + orderId + '. Status: ' + (result.orderStatus || 'updated') + '.');
+  }catch(e){
+    setStatus('Set automation failed: ' + friendlyErrorMessage(e));
+  }
+}
+
+async function recordTornMoneyPayment(orderId){
+  const busyKey = 'tornMoney:' + orderId;
+  if (state.busyActions[busyKey]) return;
+  const amountInput = document.querySelector(attrEqualsSelector('data-torn-money', orderId));
+  const refInput = document.querySelector(attrEqualsSelector('data-torn-ref', orderId));
+  const amount = Number((amountInput && amountInput.value) || 0);
+  const reference = (refInput && refInput.value || '').trim();
+  if (!amount) { setStatus('Enter Torn money amount first.'); return; }
+  if (!confirmMoneyAction('Confirm Torn-money payment?', [
+    'Order: ' + orderId,
+    'Amount: ' + amount.toLocaleString(),
+    reference ? 'Reference: ' + reference : ''
+  ])) return;
+  state.busyActions[busyKey] = true;
+  renderAutomationQueues();
+  setStatus('Recording Torn-money payment...');
+  try{
+    const result = await call('', 'POST', {
+      action:'recordTornMoneyPayment',
+      orderId,
+      amount,
+      status:'paid',
+      reference,
+      requestId: newRequestId('tornmoney'),
+      employee: state.me || 'manager'
+    });
+    addAuditLog('torn_money_payment_recorded', orderId, String(amount));
+    await refresh();
+    setStatus((result && result.duplicate ? 'Duplicate ignored. ' : '') + 'Payment received for order ' + orderId + ': ' + amount.toLocaleString() + '.');
+  }catch(e){
+    setStatus('Torn-money payment failed: ' + friendlyErrorMessage(e));
+  }finally{
+    delete state.busyActions[busyKey];
+    renderAutomationQueues();
+  }
+}
+
+async function sendCustomerDelivery(orderId){
+  if (!confirm('Send approved spy results to the configured customer Discord webhook for order ' + orderId + '?')) return;
+  try{
+    const result = await call('', 'POST', {
+      action:'sendCustomerDelivery',
+      orderId,
+      actor: state.me || 'manager'
+    });
+    addAuditLog('manager_sent_customer_delivery', orderId, result.status || '');
+    await refresh();
+    setStatus('Customer delivery status for order ' + orderId + ': ' + (result.status || 'sent') + '.');
+  }catch(e){
+    setStatus('Customer delivery failed: ' + friendlyErrorMessage(e));
+  }
+}
+
+async function markOrderDelivered(orderId){
+  if (!confirm('Mark order ' + orderId + ' as delivered?')) return;
+  try{
+    await call('', 'POST', {
+      action:'markOrderDelivered',
+      orderId,
+      deliveryMode:'manual',
+      actor: state.me || 'manager'
+    });
+    addAuditLog('manager_marked_order_delivered', orderId, 'manual');
+    await refresh();
+    setStatus('Order ' + orderId + ' marked delivered.');
+  }catch(e){
+    setStatus('Mark delivered failed: ' + friendlyErrorMessage(e));
+  }
+}
+
+async function checkAutomation(){
+  try{
+    const result = await call('', 'POST', { action:'getAutomationDiagnostics', actor: state.me || 'manager' });
+    state.automationDiagnostics = result;
+    renderAutomationQueues();
+    renderManagerSummary();
+    setStatus('Automation diagnostics updated.');
+  }catch(e){
+    setStatus('Automation diagnostics failed: ' + friendlyErrorMessage(e));
+  }
+}
+
 async function checkWebhooks(){
   try{
     const result = await call('', 'POST', { action:'webhookDebug' });
@@ -3785,6 +4027,7 @@ async function openJobSpecial(target){
   const exportHistoryBtn=qs('#export-history'); if(exportHistoryBtn) exportHistoryBtn.addEventListener('click',exportHistory);
   const recordCustomerPaymentBtn=qs('#record-customer-payment'); if(recordCustomerPaymentBtn) recordCustomerPaymentBtn.addEventListener('click',recordCustomerPayment);
   const recordEmployeePayoutBtn=qs('#record-employee-payout'); if(recordEmployeePayoutBtn) recordEmployeePayoutBtn.addEventListener('click',recordEmployeePayout);
+  const checkAutomationBtn=qs('#check-automation'); if(checkAutomationBtn) checkAutomationBtn.addEventListener('click',checkAutomation);
   const checkBackendVersionBtn=qs('#check-backend-version'); if(checkBackendVersionBtn) checkBackendVersionBtn.addEventListener('click',checkBackendVersion);
   const checkWebhooksBtn=qs('#check-webhooks'); if(checkWebhooksBtn) checkWebhooksBtn.addEventListener('click',checkWebhooks);
   const testEmployeeWebhookBtn=qs('#test-employee-webhook'); if(testEmployeeWebhookBtn) testEmployeeWebhookBtn.addEventListener('click',()=>testDiscordWebhook('employee'));
@@ -3810,6 +4053,21 @@ async function openJobSpecial(target){
       if (qs('#ledger-employee-amount')) qs('#ledger-employee-amount').value = amount;
       if (qs('#ledger-employee-status')) qs('#ledger-employee-status').value = 'queued';
       setStatus('Suggested full payout loaded for ' + employee + '.');
+    });
+  }
+  const automationQueues = qs('#automation-queues');
+  if (automationQueues) {
+    automationQueues.addEventListener('click', (event) => {
+      const action = event.target.closest('button');
+      if (!action) return;
+      const orderId = action.getAttribute('data-order-id') || '';
+      if (!orderId) return;
+      if (action.classList.contains('set-order-automation')) setOrderAutomation(orderId);
+      else if (action.classList.contains('record-torn-money')) recordTornMoneyPayment(orderId);
+      else if (action.classList.contains('copy-order-results')) copyOrderResults(orderId);
+      else if (action.classList.contains('send-customer-delivery')) sendCustomerDelivery(orderId);
+      else if (action.classList.contains('mark-order-delivered')) markOrderDelivered(orderId);
+      else if (action.classList.contains('send-new-order')) sendNewOrderNotification(orderId);
     });
   }
   const copyFormat=qs('#copy-format'); if(copyFormat) copyFormat.addEventListener('change',()=>{ state.filters.copyFormat=copyFormat.value; });
