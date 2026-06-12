@@ -3024,9 +3024,61 @@ function looksLikeSpyResultText(text, parsed){
   return !knownNonSpyLog && (hasParsedStats || hasSpyPhrases);
 }
 
+function mergeTornSpyReportsForTarget(entries, target){
+  const targetId = String(target.targetId || '').trim();
+  const targetName = normalizeTargetName(target.targetName || '');
+  const matching = entries
+    .map(entry => ({ entry, normalized: normalizeTornSpyReport(entry) }))
+    .filter(row => {
+      if (!row.normalized.hasStats) return false;
+      const idMatches = targetId && String(row.normalized.id || '') === targetId;
+      const nameMatches = targetName && normalizeTargetName(row.normalized.name || '') === targetName;
+      return idMatches || nameMatches;
+    });
+  if (!matching.length) return null;
+  const merged = { id: targetId || matching[0].normalized.id || '', name: target.targetName || matching[0].normalized.name || '', level: null, strength: null, speed: null, dexterity: null, defense: null, total: null };
+  const sources = [];
+  matching.forEach(row => {
+    const p = row.normalized;
+    ['level','strength','speed','dexterity','defense','total'].forEach(key => {
+      if (merged[key] == null && p[key] != null) merged[key] = p[key];
+    });
+    sources.push(p.rawText);
+  });
+  completeStats(merged);
+  const hasAllMergedStats = [merged.strength, merged.speed, merged.dexterity, merged.defense].every(v => v != null);
+  if (hasAllMergedStats) merged.total = merged.strength + merged.speed + merged.dexterity + merged.defense;
+  const rawText = [
+    'type: stats',
+    merged.id ? 'target_id: ' + merged.id : '',
+    merged.name ? 'target_name: ' + merged.name : '',
+    merged.level != null ? 'level: ' + merged.level : '',
+    merged.strength != null ? 'strength: ' + merged.strength : '',
+    merged.speed != null ? 'speed: ' + merged.speed : '',
+    merged.dexterity != null ? 'dexterity: ' + merged.dexterity : '',
+    merged.defense != null ? 'defense: ' + merged.defense : '',
+    merged.total != null ? 'total: ' + merged.total : '',
+    '',
+    'Merged from ' + matching.length + ' Torn report(s).'
+  ].filter(line => line !== null && line !== undefined).join('\n');
+  const parsed = Object.assign(parseSpyResult(rawText), {
+    targetId: merged.id,
+    targetName: merged.name,
+    strength: merged.strength,
+    speed: merged.speed,
+    dexterity: merged.dexterity,
+    defense: merged.defense,
+    total: merged.total,
+    level: merged.level,
+    rawText
+  });
+  return { entry: matching.map(row => row.entry), text: rawText, parsed, score: 100 + matching.length, merged: true, reportCount: matching.length };
+}
+
 function findSpyReportForTarget(entries, target){
   const targetId = String(target.targetId || '').trim();
   const targetName = normalizeTargetName(target.targetName || '');
+  const mergedMatch = mergeTornSpyReportsForTarget(entries, target);
   const scored = entries.map(entry => {
     const normalized = normalizeTornSpyReport(entry);
     const text = normalized.hasStats ? normalized.rawText : stringifyTornLog(entry);
@@ -3053,6 +3105,7 @@ function findSpyReportForTarget(entries, target){
     if (/(strength|speed|dexterity|defense|total battle stats|you managed to get)/i.test(text)) spyScore += 3;
     return { entry, text, parsed, score: identityScore + spyScore };
   }).filter(row => row && row.score > 0);
+  if (mergedMatch) scored.push(mergedMatch);
   scored.sort((a,b) => b.score - a.score);
   return scored[0] || null;
 }
