@@ -670,6 +670,9 @@ const TORN_EMPLOYEE_API_KEY = "torn_employee_api_key_session";
 const TORN_PRIVACY_ACK_KEY = "torn_employee_api_privacy_ack";
 const TORN_API_BASE = "https://api.torn.com";
 const TORN_CUSTOM_KEY_BUILDER_URL = "https://www.torn.com/preferences.php#tab=api?step=addNewKey&title=Bring_Em_Closer_Spy_Tool&user=reports";
+const TORN_REPORT_LOOKUP_ATTEMPTS = 4;
+const TORN_REPORT_LOOKUP_DELAY_MS = 1400;
+const TORN_REPORT_FETCH_LIMIT = 100;
 // ===== Helpers =====
 function qs(sel){ return document.querySelector(sel); }
 function setStatus(msg) {
@@ -1174,7 +1177,7 @@ function formatBlock(p){
   completeStats(p);
   const has4 = [p.strength,p.speed,p.dexterity,p.defense].every(v=>v!=null);
   const total = has4 ? (p.strength + p.speed + p.dexterity + p.defense) : p.total;
-  const fmt = (n)=> (n==null?0:n).toLocaleString('en-US');
+  const fmt = (n)=> (n==null ? 'N/A' : n.toLocaleString('en-US'));
   const nm = (p.name||'Unknown') + (p.targetId? ` [${p.targetId}]`:(p.id? ` [${p.id}]`:''));
   return [
     `Name:${nm}`,
@@ -2084,7 +2087,7 @@ async function submitSpy(id){
 
     // Re-kalkuler streng total (i tilfelle)
     const has4 = [p.strength,p.speed,p.dexterity,p.defense].every(v=>v!=null);
-    p.total = has4 ? (p.strength + p.speed + p.dexterity + p.defense) : null;
+    p.total = has4 ? (p.strength + p.speed + p.dexterity + p.defense) : (p.total ?? null);
     const missing = getMissingStats(p);
     if (missing.length || submitWarnings.length) {
       const shouldContinue = window.confirm(
@@ -2799,6 +2802,14 @@ function updateSpyPreview(id){
     return;
   }
   const task = state.tasks.find(t => String(t.id) === String(id)) || {};
+  if (!parsed.targetName && task.targetName) {
+    parsed.targetName = task.targetName;
+    parsed.warnings = parsed.warnings.filter(w => !/Target name was not detected/i.test(w));
+  }
+  if (!parsed.targetId && task.targetId) {
+    parsed.targetId = task.targetId;
+    parsed.warnings = parsed.warnings.filter(w => !/Target ID was not detected/i.test(w));
+  }
   if (task.targetId && parsed.targetId && String(task.targetId) !== String(parsed.targetId)) parsed.warnings.push('Pasted target ID does not match this card.');
   if (task.targetId && state.tasks.some(t => t !== task && t.status === 'submitted' && String(t.targetId || '') === String(task.targetId) && state.reviews[taskKey(t)]?.status === 'approved')) parsed.warnings.push('This target already has an approved result.');
   const warningHtml = parsed.warnings.length ? `<div class="warning-box">${parsed.warnings.map(escapeHtml).join('<br>')}</div>` : '<div class="muted" style="margin-top:8px">Spy parser looks good.</div>';
@@ -2946,6 +2957,65 @@ function normalizeTornReports(data){
   return [];
 }
 
+function normalizeReportKey(key){
+  return String(key || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function findReportField(entry, aliases){
+  const wanted = new Set(aliases.map(normalizeReportKey));
+  const seen = new Set();
+  const walk = (value, key) => {
+    if (value == null) return null;
+    if (key && wanted.has(normalizeReportKey(key))) return value;
+    if (typeof value !== 'object' || seen.has(value)) return null;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const found = walk(item, '');
+        if (found != null) return found;
+      }
+      return null;
+    }
+    for (const [childKey, childValue] of Object.entries(value)) {
+      const found = walk(childValue, childKey);
+      if (found != null) return found;
+    }
+    return null;
+  };
+  return walk(entry, '');
+}
+
+function normalizeTornSpyReport(entry){
+  const pickNum = aliases => parseNumberToken(findReportField(entry, aliases));
+  const pickText = aliases => {
+    const value = findReportField(entry, aliases);
+    return value == null ? '' : String(value).trim();
+  };
+  const p = completeStats({
+    id: String(pickNum(['target_id','targetid','target']) || ''),
+    name: pickText(['target_name','targetname','player_name','playername']),
+    level: pickNum(['level','target_level','targetlevel']),
+    strength: pickNum(['strength','str']),
+    speed: pickNum(['speed','spd']),
+    dexterity: pickNum(['dexterity','dex']),
+    defense: pickNum(['defense','defence','def']),
+    total: pickNum(['total','total_battle_stats','totalbattlestats','total_stats','totalstats'])
+  });
+  const hasStats = [p.strength,p.speed,p.dexterity,p.defense,p.total].some(v => v != null);
+  const lines = [
+    'type: ' + (pickText(['type','report_type','reporttype']) || 'stats'),
+    p.id ? 'target_id: ' + p.id : '',
+    p.name ? 'target_name: ' + p.name : '',
+    p.level != null ? 'level: ' + p.level : '',
+    p.strength != null ? 'strength: ' + p.strength : '',
+    p.speed != null ? 'speed: ' + p.speed : '',
+    p.dexterity != null ? 'dexterity: ' + p.dexterity : '',
+    p.defense != null ? 'defense: ' + p.defense : '',
+    p.total != null ? 'total: ' + p.total : ''
+  ].filter(Boolean);
+  return Object.assign(p, { hasStats, rawText: lines.join('\n') });
+}
+
 function looksLikeSpyResultText(text, parsed){
   const value = String(text || '');
   const hasParsedStats = parsed && [parsed.strength, parsed.speed, parsed.dexterity, parsed.defense, parsed.total].some(v => v != null);
@@ -2958,16 +3028,30 @@ function findSpyReportForTarget(entries, target){
   const targetId = String(target.targetId || '').trim();
   const targetName = normalizeTargetName(target.targetName || '');
   const scored = entries.map(entry => {
-    const text = stringifyTornLog(entry);
-    const parsed = parseSpyResult(text);
-    if (!looksLikeSpyResultText(text, parsed)) return null;
-    let score = 0;
-    if (targetId && text.includes(targetId)) score += 4;
-    if (targetId && parsed.targetId && String(parsed.targetId) === targetId) score += 6;
-    if (targetName && normalizeTargetName(text).includes(targetName)) score += 2;
-    if (targetName && parsed.targetName && normalizeTargetName(parsed.targetName) === targetName) score += 4;
-    if (/(strength|speed|dexterity|defense|total battle stats|you managed to get)/i.test(text)) score += 3;
-    return { entry, text, parsed, score };
+    const normalized = normalizeTornSpyReport(entry);
+    const text = normalized.hasStats ? normalized.rawText : stringifyTornLog(entry);
+    const parsedText = parseSpyResult(text);
+    const parsed = Object.assign(parsedText, {
+      targetId: normalized.id || parsedText.targetId,
+      targetName: normalized.name || parsedText.targetName,
+      strength: normalized.strength,
+      speed: normalized.speed,
+      dexterity: normalized.dexterity,
+      defense: normalized.defense,
+      total: normalized.total,
+      level: normalized.level,
+      rawText: text
+    });
+    if (!normalized.hasStats && !looksLikeSpyResultText(text, parsed)) return null;
+    let identityScore = 0;
+    let spyScore = 0;
+    if (targetId && text.includes(targetId)) identityScore += 4;
+    if (targetId && parsed.targetId && String(parsed.targetId) === targetId) identityScore += 6;
+    if (targetName && normalizeTargetName(text).includes(targetName)) identityScore += 2;
+    if (targetName && parsed.targetName && normalizeTargetName(parsed.targetName) === targetName) identityScore += 4;
+    if ((targetId || targetName) && identityScore < 1) return null;
+    if (/(strength|speed|dexterity|defense|total battle stats|you managed to get)/i.test(text)) spyScore += 3;
+    return { entry, text, parsed, score: identityScore + spyScore };
   }).filter(row => row && row.score > 0);
   scored.sort((a,b) => b.score - a.score);
   return scored[0] || null;
@@ -2992,9 +3076,9 @@ async function fetchRecentSpyReports(hours){
   if (!ensureTornPrivacyAcknowledged()) return [];
   const from = Math.floor((Date.now() - (Number(hours || getTornLogHours()) * 60 * 60 * 1000)) / 1000);
   const attempts = [
-    ['/v2/user/reports', { from, timestamp: Date.now() }],
-    ['/v2/user', { selections:'reports', from, timestamp: Date.now() }],
-    ['/user/', { selections:'reports', from, timestamp: Date.now() }]
+    ['/v2/user/reports', { from, limit: TORN_REPORT_FETCH_LIMIT, sort:'DESC', timestamp: Date.now() }],
+    ['/v2/user', { selections:'reports', from, limit: TORN_REPORT_FETCH_LIMIT, sort:'DESC', timestamp: Date.now() }],
+    ['/user/', { selections:'reports', from, limit: TORN_REPORT_FETCH_LIMIT, timestamp: Date.now() }]
   ];
   const errors = [];
   for (const [path, params] of attempts) {
@@ -3016,6 +3100,35 @@ async function fetchRecentSpyReports(hours){
   throw new Error('Could not fetch Torn reports. ' + errors.join(' | '));
 }
 
+async function fetchRecentSpyReportsDeep(hours, onAttempt, shouldStop){
+  const seen = new Set();
+  const combined = [];
+  const debugRuns = [];
+  for (let attempt = 1; attempt <= TORN_REPORT_LOOKUP_ATTEMPTS; attempt++) {
+    if (onAttempt) onAttempt(attempt, TORN_REPORT_LOOKUP_ATTEMPTS);
+    const attemptHours = Math.min(72, Number(hours || getTornLogHours()) * attempt);
+    const reports = await fetchRecentSpyReports(attemptHours);
+    const debug = Object.assign({ attempt, hours: attemptHours }, state.torn.lastReportDebug || {});
+    debugRuns.push(debug);
+    reports.forEach(report => {
+      const key = String(report.reportId || report.id || report.timestamp || '') + '|' + String(report.target_id || report.targetId || '') + '|' + stringifyTornLog(report).slice(0, 200);
+      if (seen.has(key)) return;
+      seen.add(key);
+      combined.push(report);
+    });
+    if (shouldStop && shouldStop(combined)) break;
+    if (attempt < TORN_REPORT_LOOKUP_ATTEMPTS) await delay(TORN_REPORT_LOOKUP_DELAY_MS);
+  }
+  state.torn.lastReportDebug = {
+    path: (debugRuns.map(run => run.path).filter(Boolean)[0] || 'reports'),
+    count: combined.length,
+    attempts: debugRuns,
+    responseKeys: debugRuns.flatMap(run => run.responseKeys || []).slice(0, 12),
+    sampleKeys: combined[0] && typeof combined[0] === 'object' ? Object.keys(combined[0]).slice(0, 16) : []
+  };
+  return combined;
+}
+
 async function findSpyFromLogs(id, submitAfterFind){
   const task = state.tasks.find(t => String(t.id) === String(id));
   if (!task) { setStatus('Target not found locally. Refresh and try again.'); return; }
@@ -3024,7 +3137,9 @@ async function findSpyFromLogs(id, submitAfterFind){
   setStatus('Searching Torn reports for ' + (task.targetName || task.targetId || 'target') + '...');
   try{
     const hours = getTornLogHours();
-    const reports = await fetchRecentSpyReports(hours);
+    const reports = await fetchRecentSpyReportsDeep(hours, (attempt, total) => {
+      setStatus('Searching Torn reports for ' + (task.targetName || task.targetId || 'target') + '... attempt ' + attempt + ' / ' + total);
+    }, reportsSoFar => !!findSpyReportForTarget(reportsSoFar, task));
     const debug = state.torn.lastReportDebug || {};
     setTornApiStatus('Fetched ' + (debug.count ?? reports.length) + ' Torn report(s) from ' + (debug.path || 'reports') + '.', reports.length ? 'good' : 'warn');
     const match = findSpyReportForTarget(reports, task);
