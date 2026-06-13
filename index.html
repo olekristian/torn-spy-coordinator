@@ -375,6 +375,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
         <div class="bar">
           <label class="sr-only" for="adm">Admin key</label>
           <input id="adm" placeholder="Admin key" aria-label="Admin key" autocomplete="off" style="width:240px">
+          <button id="manager-login-btn" type="button" class="secondary">Unlock manager</button>
           <span class="muted">Admin areas only appear after backend verification.</span>
         </div>
       </details>
@@ -1014,6 +1015,50 @@ async function verifyAdminKey(){
     enforceVisibility();
     setStatus('Admin key not verified. Manager tools are hidden.');
     return false;
+  }
+}
+
+async function loginManager(){
+  saveSettings();
+  if (!state.admin) {
+    setStatus('Enter manager code first.');
+    return false;
+  }
+  if (!hasAccessCode()) {
+    setStatus('Access code is required before manager login.');
+    return false;
+  }
+  setStatus('Verifying manager code...');
+  const btn = qs('#manager-login-btn');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Verifying...';
+  }
+  try{
+    await call('', 'POST', { action:'verifyAdmin' });
+    state.adminVerified = true;
+    sessionStorage.setItem('torn_admin_key', state.admin);
+    localStorage.removeItem('torn_admin_key');
+    enforceVisibility();
+    render();
+    const manageBtn = qs('#tab-manage-btn');
+    if (manageBtn) manageBtn.click();
+    setStatus('Manager unlocked. Loading manager data...');
+    await refresh({ skipAdminVerify:true, skipReviewSync:true });
+    setStatus('Manager ready.');
+    return true;
+  }catch(e){
+    state.adminVerified = false;
+    sessionStorage.removeItem('torn_admin_key');
+    localStorage.removeItem('torn_admin_key');
+    enforceVisibility();
+    setStatus('Manager login failed: ' + friendlyErrorMessage(e));
+    return false;
+  }finally{
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Unlock manager';
+    }
   }
 }
 
@@ -2029,7 +2074,8 @@ function renderWebhookDiagnostics(){
 }
 
 // ===== Actions =====
-async function refresh(){
+async function refresh(options){
+  options = options || {};
   saveSettings();
   if (!hasAccessCode()) {
     state.tasks = [];
@@ -2048,8 +2094,8 @@ async function refresh(){
     state.customerPayments=data.customerPayments||[];
     state.employeePayouts=data.employeePayouts||[];
     if(data.deliveryHistory&&data.deliveryHistory.length) state.history=data.deliveryHistory.concat(state.history).slice(0,500);
-    if (state.admin) await verifyAdminKey();
-    if (state.adminVerified) {
+    if (state.admin && !options.skipAdminVerify) await verifyAdminKey();
+    if (state.adminVerified && !options.skipReviewSync) {
       const reviewSync = await reconcileLocalReviewsToServer_();
       if (reviewSync.synced > 0) {
         const latest = await call('?action=list','GET');
@@ -4012,6 +4058,8 @@ async function openJobSpecial(target){
   const verifyTornBtn=qs('#verify-torn-key'); if(verifyTornBtn) verifyTornBtn.addEventListener('click',verifyTornKey);
   const forgetTornBtn=qs('#forget-torn-key'); if(forgetTornBtn) forgetTornBtn.addEventListener('click',forgetTornKey);
   const tornKeyInput=qs('#torn-api-key'); if(tornKeyInput) tornKeyInput.addEventListener('input',()=>{ state.torn.apiKey = tornKeyInput.value.trim(); state.torn.verified = null; if (state.torn.apiKey) sessionStorage.setItem(TORN_EMPLOYEE_API_KEY, state.torn.apiKey); else sessionStorage.removeItem(TORN_EMPLOYEE_API_KEY); });
+  const managerLoginBtn=qs('#manager-login-btn'); if(managerLoginBtn) managerLoginBtn.addEventListener('click',loginManager);
+  const adminInput=qs('#adm'); if(adminInput) adminInput.addEventListener('keydown',(event)=>{ if(event.key === 'Enter'){ event.preventDefault(); loginManager(); } });
   const addBtn =qs('#m-add');  if(addBtn)  addBtn.addEventListener('click',addTask);
   const previewImportBtn=qs('#m-preview-import'); if(previewImportBtn) previewImportBtn.addEventListener('click',previewImportTargets);
   const importBtn=qs('#m-import'); if(importBtn) importBtn.addEventListener('click',importTargets);
