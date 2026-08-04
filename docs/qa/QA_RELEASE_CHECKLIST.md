@@ -1,7 +1,7 @@
 # Torn Spy Coordinator — release checklist
 
 Dato: __________  
-Release: `2026-07-23-phase5-rc1`  
+Release: `2026-08-05-admin-overview-v1`
 Operatør: __________  
 Godkjenner: __________
 
@@ -39,8 +39,8 @@ Ikke skriv faktiske access codes, admin keys eller webhooktokens i sjekklisten.
 | BLOCKED | To employee-testkoder er konfigurert | Ikke satt |
 | BLOCKED | Separat admin testkey og `ADMIN_ACTOR` er konfigurert | Ikke satt |
 | BLOCKED | Kun testwebhooks er konfigurert | Ingen testwebhooks tilgjengelige |
-| PASS | Frontend/backend kildeversjon er lik | `2026-07-23-phase5-rc1`; lokal test |
-| PASS | Lokal regression er grønn | 46/46 |
+| PASS | Frontend/backend kildeversjon er lik | `2026-08-05-admin-overview-v1`; lokal test |
+| PASS | Lokal regression er grønn | 51/51 |
 
 ## Gate 1 — Apps Script transport og auth
 
@@ -146,7 +146,7 @@ Godkjent av/evidens: ________________________________________________
 | BLOCKED | Live status annonseres korrekt | Lokal ARIA contract PASS; assistive runtime mangler |
 | BLOCKED | Ingen uncaught errors eller uhåndterte requestfeil | __________ |
 | BLOCKED | Ingen secrets i URL, responses eller logging | __________ |
-| BLOCKED | Frontend/backend viser `2026-07-23-phase5-rc1` | Lokal parity PASS; runtime mangler |
+| BLOCKED | Frontend/backend viser `2026-08-05-admin-overview-v1` | Lokal parity PASS; runtime mangler |
 
 Gate 5 samlet status: **BLOCKED**  
 Godkjent av/evidens: ________________________________________________

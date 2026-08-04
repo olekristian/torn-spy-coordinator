@@ -18,10 +18,11 @@ lokalt ved å bruke arkets faktiske headerrekke for alle reads/writes, legge nye
 headers etter faktisk siste kolonne, avvise dupliserte headers og behandle tom
 legacy-versjon som versjon 1.
 
-Frontend/backend-versjonsmarkørene var også ulike og er samkjørt til
-`2026-07-23-phase5-rc1`.
+Frontend/backend-versjonsmarkørene var også ulike og er samkjørt. Etter den
+ikke-deployede kanselleringsfunksjonen 2026-08-04 er gjeldende kandidat
+`2026-08-05-admin-overview-v1`.
 
-Den komplette lokale pakken passerer nå **46/46 tester**. De fem eksterne
+Den komplette lokale pakken passerer nå **51/51 tester**. De fem eksterne
 runtime-gatene er likevel ikke PASS: det finnes ingen staging Apps
 Script-deploy eller staging-URL, nettleserprofilen er ikke Google-innlogget,
 test-properties er ikke satt og ingen Discord-testwebhooks er tilgjengelige.
@@ -62,12 +63,13 @@ Ingen gate er merket PASS uten den faktiske runtime-evidensen fase 5 krever.
 - **Før-status:** P1 / CONFIRMED i faktisk kildekode.
 - **Rotårsak:** frontend annonserte `2026-06-13-automation-v1`, backend
   `2026-07-23-phase4-v1`.
-- **Lokal fix:** begge annonserer `2026-07-23-phase5-rc1`, med regresjonstest.
+- **Lokal fix:** begge annonserer samme kandidat, nå
+  `2026-08-05-admin-overview-v1`, med regresjonstest.
 - **Nåstatus:** FIXED — STATIC VERIFIED ONLY. Må bekreftes via staging `version`.
 
 ## Lokal regression
 
-- Automated: **46 passed, 0 failed**.
+- Automated: **51 passed, 0 failed**.
 - Migrasjon: 3 nye tester for additive headers, dobbel ensure, legacy-rad,
   faktisk `Targets`/`Orders`-rekkefølge og write round-trip.
 - Deployversjon: frontend/backend-paritet er nå testet.
@@ -140,7 +142,7 @@ employee-, manager- og Outbox-test.
 2. Eksporter/backup alle relevante Sheets og registrer radantall/headerhash.
 3. Verifiser properties og secretscan; valider `EMPLOYEE_ACCESS_MAP` som JSON.
 4. Kjør `ensureSheets_()` og før/etter-diff; kjør den på nytt for idempotens.
-5. Deploy immutable Apps Script-versjon `2026-07-23-phase5-rc1`.
+5. Deploy immutable Apps Script-versjon `2026-08-05-admin-overview-v1`.
 6. Deploy frontend med samme versjon i det avtalte vedlikeholdsvinduet.
 7. Kjør credential-fri og maskert immediate smoke/network-test.
 8. Kjør autentisert employee-test med avgrenset fixture.

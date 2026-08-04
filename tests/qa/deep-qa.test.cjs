@@ -539,3 +539,122 @@ test('formula-like values are neutralized and Discord mentions are disabled', ()
   const payload = JSON.parse(h.env.sends[0].request.payload);
   assert.deepEqual(JSON.parse(JSON.stringify(payload.allowed_mentions)), { parse:[], users:[], roles:[] });
 });
+
+test('manager cancellation hides targets, preserves ledger rows and stops unsent outbox events', () => {
+  const h = createHarness();
+  h.append('Orders', order());
+  h.append('Targets', target({ orderId:'100', status:'claimed', claimedBy:'Employee A', assignedTo:'Employee A' }));
+  h.append('Targets', target({ id:'target-2', targetId:'100002', orderId:'100' }));
+  h.append('CustomerPayments', {
+    id:'payment-1', orderId:'100', amount:25, status:'partial', requestId:'payment-before-cancel',
+  });
+  h.append('EmployeePayouts', {
+    id:'payout-1', targetRowId:'target-1', submissionId:'sub-1', amount:10,
+    status:'queued', requestId:'payout-before-cancel',
+  });
+  h.append('Outbox', { eventId:'pending-1', eventType:'new_order', entityId:'100', status:'pending' });
+  h.append('Outbox', { eventId:'unknown-1', eventType:'order_completion', entityId:'100', status:'unknown' });
+  h.append('Outbox', { eventId:'sent-1', eventType:'new_order', entityId:'100', status:'sent' });
+
+  const denied = h.request({
+    action:'cancelOrder', key:'employee-key', orderId:'100', reason:'Customer withdrew', requestId:'cancel-100',
+  });
+  assert.equal(denied.ok, false);
+  assert.match(denied.error, /Admin key/);
+
+  const result = h.request({
+    action:'cancelOrder', key:'employee-key', admin:'admin-key', orderId:'100',
+    reason:'Customer withdrew', requestId:'cancel-100',
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'cancelled');
+  assert.equal(result.targetCount, 2);
+  assert.equal(result.activeCustomerPayments, 1);
+  assert.equal(result.activeEmployeePayouts, 1);
+
+  const cancelledOrder = h.rows('Orders')[0];
+  assert.equal(cancelledOrder.orderStatus, 'cancelled');
+  assert.equal(cancelledOrder.cancelReason, 'Customer withdrew');
+  assert.equal(cancelledOrder.cancelledBy, 'manager');
+  assert.equal(cancelledOrder.cancelOperationId, 'cancel-100');
+  assert.equal(cancelledOrder.autoDeliver, '');
+
+  const targets = h.rows('Targets');
+  assert.equal(targets.length, 2);
+  assert.ok(targets.every(row => row.status === 'cancelled'));
+  assert.ok(targets.every(row => row.claimedBy === '' && row.assignedTo === ''));
+  assert.equal(h.rows('CustomerPayments').length, 1);
+  assert.equal(h.rows('EmployeePayouts').length, 1);
+
+  const outbox = Object.fromEntries(h.rows('Outbox').map(row => [row.eventId, row]));
+  assert.equal(outbox['pending-1'].status, 'cancelled');
+  assert.equal(outbox['unknown-1'].status, 'unknown');
+  assert.equal(outbox['sent-1'].status, 'sent');
+
+  const employeeList = h.request({ action:'list', key:'employee-key' });
+  const managerList = h.request({ action:'list', key:'employee-key', admin:'admin-key' });
+  assert.equal(employeeList.tasks.length, 0);
+  assert.equal(managerList.tasks.length, 0);
+  assert.equal(managerList.orders[0].orderStatus, 'cancelled');
+  assert.equal(h.rows('AuditLog').filter(row => row.action === 'order_cancelled').length, 1);
+
+  const replay = h.request({
+    action:'cancelOrder', key:'employee-key', admin:'admin-key', orderId:'100',
+    reason:'Customer withdrew', requestId:'cancel-100',
+  });
+  assert.equal(replay.ok, true);
+  assert.equal(replay.duplicate, true);
+  assert.equal(replay.cancelledTargets, 0);
+  assert.equal(h.rows('AuditLog').filter(row => row.action === 'order_cancelled').length, 1);
+});
+
+test('cancelled orders reject new delivery, notification and outbox retry activity', () => {
+  const h = createHarness({
+    properties:{ EMPLOYEE_DISCORD_WEBHOOK_URL:'https://discord.com/api/webhooks/test/token' },
+  });
+  h.append('Orders', order({ orderStatus:'cancelled', cancelledAt:'2026-01-02T00:00:00.000Z', cancelReason:'QA' }));
+  h.append('Targets', target({ orderId:'100', status:'cancelled' }));
+  h.append('Outbox', {
+    eventId:'new_order:100', eventType:'new_order', entityId:'100', status:'unknown', payload:'test',
+  });
+
+  assert.throws(
+    () => h.context.sendNewOrderNotification_({ admin:'admin-key', orderId:'100' }),
+    /cancelled/,
+  );
+  assert.throws(
+    () => h.context.markOrderDelivered_({ admin:'admin-key', orderId:'100' }),
+    /cancelled/,
+  );
+  assert.throws(
+    () => h.context.retryOutboxEvent_({ admin:'admin-key', eventId:'new_order:100', confirmUnknown:true }),
+    /cancelled order/,
+  );
+  assert.equal(h.env.sends.length, 0);
+});
+
+test('delivered orders cannot be cancelled', () => {
+  const h = createHarness();
+  h.append('Orders', order({ orderStatus:'delivered', deliveredAt:'2026-01-02T00:00:00.000Z' }));
+  const response = h.request({
+    action:'cancelOrder', key:'employee-key', admin:'admin-key', orderId:'100',
+    reason:'Too late', requestId:'cancel-delivered',
+  });
+  assert.equal(response.ok, false);
+  assert.match(response.error, /Delivered or closed/);
+  assert.equal(h.rows('Orders')[0].orderStatus, 'delivered');
+  assert.equal(h.rows('AuditLog').length, 0);
+});
+
+test('legacy target-only order can be cancelled and receives an order ledger row', () => {
+  const h = createHarness();
+  h.append('Targets', target({ orderId:'legacy-200', customer:'Legacy Customer' }));
+  const response = h.request({
+    action:'cancelOrder', key:'employee-key', admin:'admin-key', orderId:'legacy-200',
+    reason:'Legacy cleanup', requestId:'cancel-legacy-200',
+  });
+  assert.equal(response.ok, true);
+  assert.equal(h.rows('Orders').length, 1);
+  assert.equal(h.rows('Orders')[0].orderStatus, 'cancelled');
+  assert.equal(h.rows('Targets')[0].status, 'cancelled');
+});

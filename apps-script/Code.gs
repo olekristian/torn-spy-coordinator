@@ -11,7 +11,7 @@ function _employeeAccessMap_(){
     throw new Error('EMPLOYEE_ACCESS_MAP is not valid JSON.');
   }
 }
-const BACKEND_VERSION = '2026-07-23-phase5-rc1';
+const BACKEND_VERSION = '2026-08-05-admin-overview-v1';
 const MANAGER_WEBHOOK_KEYS = ['MANAGER_DISCORD_WEBHOOK_URL','DISCORD_MANAGER_WEBHOOK_URL','MANAGER_WEBHOOK_URL','DISCORD_WEBHOOK_URL'];
 const EMPLOYEE_WEBHOOK_KEYS = ['EMPLOYEE_DISCORD_WEBHOOK_URL','DISCORD_EMPLOYEE_WEBHOOK_URL','EMPLOYEE_WEBHOOK_URL','DISCORD_WEBHOOK_URL'];
 const CUSTOMER_WEBHOOK_PREFIX = 'CUSTOMER_DISCORD_WEBHOOK_URL_';
@@ -36,7 +36,7 @@ const SHEETS = {
 const HEADERS = {
   Targets: ['id','targetName','targetId','level','notes','priority','status','claimedBy','claimedAt','submittedAt','reviewStatus','assignedTo','assignedAt','orderId','customer','pricePerSpy','employeeRate','customerPaymentStatus','employeePayoutStatus','createdAt','updatedAt','version','lastOperationId'],
   Submissions: ['id','targetRowId','targetName','targetId','submittedBy','submittedAt','rawText','level','strength','speed','dexterity','defense','total','formatted','reviewStatus','reviewedBy','reviewedAt','warnings','updatedAt','requestId','version','reviewOperationId'],
-  Orders: ['orderId','customer','requestedBy','orderedAt','targetCount','pricePerSpy','totalPrice','paymentStatus','employeePayoutStatus','newOrderNotifiedAt','newOrderNotificationStatus','completedAt','completionNotifiedAt','completionNotificationStatus','orderStatus','paymentRequired','paymentConfirmedAt','paymentConfirmedBy','paymentType','deliveryMode','autoDeliver','customerDeliveryConfigured','deliveredAt','deliveryStatus','deliveryError','notes','createdAt','updatedAt'],
+  Orders: ['orderId','customer','requestedBy','orderedAt','targetCount','pricePerSpy','totalPrice','paymentStatus','employeePayoutStatus','newOrderNotifiedAt','newOrderNotificationStatus','completedAt','completionNotifiedAt','completionNotificationStatus','orderStatus','paymentRequired','paymentConfirmedAt','paymentConfirmedBy','paymentType','deliveryMode','autoDeliver','customerDeliveryConfigured','deliveredAt','deliveryStatus','deliveryError','notes','createdAt','updatedAt','cancelledAt','cancelledBy','cancelReason','cancelOperationId'],
   Customers: ['customer','contact','notes','createdAt','updatedAt'],
   Employees: ['displayName','payoutHandle','defaultRate','notes','createdAt','updatedAt'],
   CustomerPayments: ['id','orderId','customer','amount','status','reference','note','recordedBy','recordedAt','requestId','voidedAt','voidedBy','voidReason'],
@@ -93,6 +93,7 @@ function dispatch_(action, input) {
   if (action === 'recordTornMoneyPayment') return recordTornMoneyPayment_(input);
   if (action === 'sendCustomerDelivery') return sendCustomerDelivery_(input);
   if (action === 'markOrderDelivered') return markOrderDelivered_(input);
+  if (action === 'cancelOrder') return cancelOrder_(input);
   if (action === 'getAutomationDiagnostics') return getAutomationDiagnostics_(input);
   if (action === 'reconcileOutbox') return reconcileOutbox_(input);
   if (action === 'retryOutboxEvent') return retryOutboxEvent_(input);
@@ -105,7 +106,7 @@ function version_() {
     ok: true,
     version: BACKEND_VERSION,
     checkedAt: now_(),
-    actions: ['version','list','customerPayment','voidCustomerPayment','employeePayout','voidEmployeePayout','setOrderPrice','webhookDebug','testDiscordWebhook','sendNewOrderNotification','sendOrderCompleteNotification','setOrderAutomation','recordTornMoneyPayment','sendCustomerDelivery','markOrderDelivered','getAutomationDiagnostics','reconcileOutbox','retryOutboxEvent']
+    actions: ['version','list','customerPayment','voidCustomerPayment','employeePayout','voidEmployeePayout','setOrderPrice','webhookDebug','testDiscordWebhook','sendNewOrderNotification','sendOrderCompleteNotification','setOrderAutomation','recordTornMoneyPayment','sendCustomerDelivery','markOrderDelivered','cancelOrder','getAutomationDiagnostics','reconcileOutbox','retryOutboxEvent']
   };
 }
 
@@ -114,9 +115,22 @@ function list_(input) {
   const adminOk = isAdminInput_(input);
   const orders = readObjects_(SHEETS.orders);
   const orderById = {};
-  orders.forEach(order => { if (order.orderId) orderById[String(order.orderId)] = order; });
+  const orderStatusById = {};
+  orders.forEach(order => {
+    if (!order.orderId) return;
+    const orderId = String(order.orderId);
+    orderById[orderId] = order;
+    orderStatusById[orderId] = normalizeOrderStatus_(order);
+  });
   const targets = readObjects_(SHEETS.targets)
-  .filter(row => adminOk || isOrderVisibleToEmployees_(orderById[String(row.orderId || '')]))
+  .filter(row => {
+    const orderId = String(row.orderId || '');
+    const order = orderById[orderId];
+    const orderStatus = orderStatusById[orderId];
+    if (String(row.status || '') === 'cancelled') return false;
+    if (orderStatus === 'cancelled') return false;
+    return adminOk || !order || ['ready_for_work','in_progress','pending_review','ready_to_deliver'].indexOf(orderStatus) !== -1;
+  })
   .map(row => {
     const base = {
     id: row.id,
@@ -166,12 +180,6 @@ function sanitizeOrderForClient_(order) {
   copy.customerDeliveryConfigured = bool_(copy.customerDeliveryConfigured) || !!customerWebhookForOrder_(copy.orderId, copy.customer);
   copy.orderStatus = normalizeOrderStatus_(copy);
   return copy;
-}
-
-function isOrderVisibleToEmployees_(order) {
-  if (!order) return true;
-  const status = normalizeOrderStatus_(order);
-  return ['ready_for_work','in_progress','pending_review','ready_to_deliver'].indexOf(status) !== -1;
 }
 
 function addTarget_(input) {
@@ -308,6 +316,8 @@ function resolveOrderIdForNewTarget_(requestedOrderId, requireExistingOrder) {
   const clean = String(requestedOrderId || '').trim();
   if (clean) {
     if (requireExistingOrder && !orderExists_(clean)) throw new Error('Order does not exist. Pick an ongoing order.');
+    const order = readObjects_(SHEETS.orders).find(row => String(row.orderId || '') === clean);
+    if (order && normalizeOrderStatus_(order) === 'cancelled') throw new Error('Order is cancelled and cannot receive new targets.');
     return clean;
   }
   if (requireExistingOrder) throw new Error('Order ID is required when only ongoing orders are allowed.');
@@ -491,6 +501,7 @@ function reviewSubmission_(input) {
   let orderId = '';
   const result = withScriptLock_(() => {
     const target = getTargetById_(input.targetRowId || input.id);
+    assertOrderNotCancelled_(target.orderId);
     const submissions = sheet_(SHEETS.submissions);
     const row = readObjectsWithRows_(SHEETS.submissions).find(r => String(r.id || '') === submissionId);
     if (!row || String(row.targetRowId || '') !== String(target.id)) throw new Error('Submission not found for target.');
@@ -545,6 +556,7 @@ function assignTarget_(input) {
   const actor = String(_props().getProperty('ADMIN_ACTOR') || 'manager');
   return withScriptLock_(() => {
     const updated = updateTarget_(input.id, row => {
+      assertOrderNotCancelled_(row.orderId);
       row.assignedTo = input.assignedTo || input.employeeName || '';
       row.assignedAt = now_();
       row.updatedAt = now_();
@@ -578,6 +590,7 @@ function recordCustomerPayment_(input) {
     }
     const order = ensureOrderRow_(input.orderId);
     if (!order) throw new Error('Order not found.');
+    assertOrderNotCancelled_(order);
     const paid = readObjects_(SHEETS.customerPayments)
       .filter(row => String(row.orderId || '') === String(input.orderId || '') && String(row.status || '') !== 'voided')
       .reduce((sum, row) => sum + num_(row.amount), 0);
@@ -660,6 +673,7 @@ function recordEmployeePayout_(input) {
       return { ok:true, duplicate:true, payoutId:existing.id, amount:num_(existing.amount) };
     }
     const target = input.targetRowId ? getTargetById_(input.targetRowId) : null;
+    if (target) assertOrderNotCancelled_(target.orderId);
     const activeForWork = readObjects_(SHEETS.employeePayouts)
       .filter(row => String(row.submissionId || '') === String(input.submissionId || '') && String(row.status || '') !== 'voided');
     const alreadyPaid = activeForWork.reduce((sum, row) => sum + num_(row.amount), 0);
@@ -804,6 +818,7 @@ function setOrderPriceUnlocked_(input) {
   const orderId = String(input.orderId || '').trim();
   const requestId = String(input.requestId || '').trim();
   if (!orderId) throw new Error('orderId is required.');
+  assertOrderNotCancelled_(orderId);
   const amount = num_(input.amount);
   if (!amount || amount < 0) throw new Error('A positive price amount is required.');
   const targets = readObjectsWithRows_(SHEETS.targets).filter(r => String(r.orderId || '') === orderId);
@@ -978,6 +993,19 @@ function ensureOrderRow_(orderId) {
   return readObjectsWithRows_(SHEETS.orders).find(r => String(r.orderId || '') === String(orderId || '')) || null;
 }
 
+function getOrderRow_(orderId) {
+  return readObjectsWithRows_(SHEETS.orders)
+    .find(row => String(row.orderId || '') === String(orderId || '')) || null;
+}
+
+function assertOrderNotCancelled_(orderOrId) {
+  if (!orderOrId) return;
+  const order = typeof orderOrId === 'object' ? orderOrId : getOrderRow_(orderOrId);
+  if (order && normalizeOrderStatus_(order) === 'cancelled') {
+    throw new Error('Order is cancelled. No further order activity is allowed.');
+  }
+}
+
 function syncOrderCompletion_(orderId) {
   if (!orderId) return null;
   const order = ensureOrderRow_(orderId);
@@ -1062,6 +1090,7 @@ function sendOrderCompleteNotification_(input) {
 
   const row = ensureOrderRow_(orderId);
   if (!row) throw new Error('Order not found.');
+  assertOrderNotCancelled_(row);
   const actor = adminActor_();
   const statusOnly = input.markOnly === true || String(input.markOnly || '') === 'true';
   const alreadySent = row.completionNotifiedAt && row.completionNotificationStatus === 'sent';
@@ -1119,6 +1148,7 @@ function sendNewOrderNotification_(input) {
   if (!synced) throw new Error('Order not found.');
   const row = ensureOrderRow_(orderId);
   if (!row) throw new Error('Order not found.');
+  assertOrderNotCancelled_(row);
   const actor = adminActor_();
   const orderStatus = normalizeOrderStatus_(row);
   if (orderStatus === 'awaiting_payment' || orderStatus === 'intake') {
@@ -1162,6 +1192,7 @@ function setOrderAutomation_(input) {
   if (!orderId) throw new Error('orderId is required.');
   const row = ensureOrderRow_(orderId);
   if (!row) throw new Error('Order not found.');
+  assertOrderNotCancelled_(row);
   const submittedWebhook = String(input.customerWebhookUrl || '').trim();
   if (submittedWebhook) {
     if (!/^https:\/\/discord\.com\/api\/webhooks\//i.test(submittedWebhook)) throw new Error('Customer webhook must be a Discord webhook URL.');
@@ -1228,6 +1259,7 @@ function sendCustomerDelivery_(input) {
   if (!synced || !synced.complete) throw new Error('Order is not ready to deliver.');
   const actor = adminActor_();
   const row = ensureOrderRow_(orderId);
+  assertOrderNotCancelled_(row);
   const webhookUrl = customerWebhookForOrder_(orderId, synced.customer || row.customer);
   if (!webhookUrl) {
     markDeliveryFailed_(row, 'customer_webhook_missing', actor);
@@ -1251,6 +1283,116 @@ function markOrderDelivered_(input) {
   if (!orderId) throw new Error('orderId is required.');
   markOrderDeliveredInternal_(orderId, adminActor_(), input.deliveryMode || 'manual');
   return { ok:true, orderId:orderId, status:'delivered' };
+}
+
+function cancelOrder_(input) {
+  requireAdmin_(input);
+  const orderId = String(input.orderId || '').trim();
+  const reason = String(input.reason || '').trim();
+  const requestId = String(input.requestId || '').trim();
+  if (!orderId) throw new Error('orderId is required.');
+  if (!reason) throw new Error('A cancellation reason is required.');
+  if (!requestId) throw new Error('requestId is required for cancelling an order.');
+  const actor = adminActor_();
+
+  return withScriptLock_(() => {
+    const order = getOrderRow_(orderId) || ensureOrderRow_(orderId);
+    if (!order) throw new Error('Order not found.');
+    const currentStatus = normalizeOrderStatus_(order);
+    const sameOperation = String(order.cancelOperationId || '') === requestId;
+    if (currentStatus === 'delivered' || currentStatus === 'closed') {
+      throw new Error('Delivered or closed orders cannot be cancelled.');
+    }
+    if (currentStatus === 'cancelled' && !sameOperation) {
+      throw new Error('Conflict: order is already cancelled.');
+    }
+    if (sameOperation && !sameText_(order.cancelReason, reason)) {
+      throw new Error('Conflict: requestId was already used with another cancellation reason.');
+    }
+
+    const timestamp = order.cancelledAt || now_();
+    if (currentStatus !== 'cancelled') {
+      writeObjectAtRow_(sheet_(SHEETS.orders), order._row, {
+        orderStatus:'cancelled',
+        cancelledAt:timestamp,
+        cancelledBy:actor,
+        cancelReason:reason,
+        cancelOperationId:requestId,
+        autoDeliver:'',
+        updatedAt:timestamp,
+      });
+    }
+
+    const targetSheet = sheet_(SHEETS.targets);
+    const targets = readObjectsWithRows_(SHEETS.targets)
+      .filter(row => String(row.orderId || '') === orderId);
+    let cancelledTargets = 0;
+    targets.forEach(target => {
+      if (String(target.status || '') === 'cancelled' && String(target.lastOperationId || '') === requestId) return;
+      writeObjectAtRow_(targetSheet, target._row, {
+        status:'cancelled',
+        claimedBy:'',
+        claimedAt:'',
+        assignedTo:'',
+        assignedAt:'',
+        lastOperationId:requestId,
+        version:(num_(target.version) || 1) + 1,
+        updatedAt:timestamp,
+      });
+      cancelledTargets += 1;
+    });
+
+    const outboxSheet = sheet_(SHEETS.outbox);
+    const outbox = readObjectsWithRows_(SHEETS.outbox)
+      .filter(row => String(row.entityId || '') === orderId);
+    let stoppedEvents = 0;
+    let ambiguousEvents = 0;
+    outbox.forEach(event => {
+      const status = String(event.status || '');
+      if (status === 'sent' || status === 'cancelled') return;
+      if (status === 'sending' || status === 'unknown') {
+        writeObjectAtRow_(outboxSheet, event._row, {
+          status:'unknown',
+          updatedAt:timestamp,
+          lastError:'Order cancelled while provider outcome may be ambiguous; reconcile manually.',
+        });
+        ambiguousEvents += 1;
+        return;
+      }
+      writeObjectAtRow_(outboxSheet, event._row, {
+        status:'cancelled',
+        updatedAt:timestamp,
+        lastError:'Order cancelled before delivery.',
+      });
+      stoppedEvents += 1;
+    });
+
+    const activeCustomerPayments = readObjects_(SHEETS.customerPayments)
+      .filter(row => String(row.orderId || '') === orderId && String(row.status || '') !== 'voided').length;
+    const targetIds = new Set(targets.map(row => String(row.id || '')));
+    const activeEmployeePayouts = readObjects_(SHEETS.employeePayouts)
+      .filter(row => targetIds.has(String(row.targetRowId || '')) && String(row.status || '') !== 'voided').length;
+    ensureAuditOnce_(requestId, actor, 'order_cancelled', orderId, JSON.stringify({
+      reason:reason,
+      targets:targets.length,
+      activeCustomerPayments:activeCustomerPayments,
+      activeEmployeePayouts:activeEmployeePayouts,
+      stoppedOutboxEvents:stoppedEvents,
+      ambiguousOutboxEvents:ambiguousEvents,
+    }));
+    return {
+      ok:true,
+      duplicate:currentStatus === 'cancelled',
+      orderId:orderId,
+      status:'cancelled',
+      targetCount:targets.length,
+      cancelledTargets:cancelledTargets,
+      activeCustomerPayments:activeCustomerPayments,
+      activeEmployeePayouts:activeEmployeePayouts,
+      stoppedOutboxEvents:stoppedEvents,
+      ambiguousOutboxEvents:ambiguousEvents,
+    };
+  });
 }
 
 function getAutomationDiagnostics_(input) {
@@ -1279,6 +1421,7 @@ function maybeAutoDeliverOrder_(orderId, actor) {
 function markOrderDeliveredInternal_(orderId, actor, mode) {
   const row = ensureOrderRow_(orderId);
   if (!row) throw new Error('Order not found.');
+  assertOrderNotCancelled_(row);
   writeObjectAtRow_(sheet_(SHEETS.orders), row._row, {
     orderStatus: 'delivered',
     deliveredAt: now_(),
@@ -1443,6 +1586,9 @@ function postDiscordEvent_(eventId, eventType, entityId, webhookUrl, content) {
     if (existing && String(existing.status || '') === 'sent') {
       return { send:false, sent:true, status:'sent', eventId:eventId };
     }
+    if (existing && String(existing.status || '') === 'cancelled') {
+      return { send:false, sent:false, status:'cancelled', eventId:eventId };
+    }
     if (existing && (String(existing.status || '') === 'sending' || String(existing.status || '') === 'unknown')) {
       return { send:false, sent:false, status:String(existing.status), eventId:eventId };
     }
@@ -1494,6 +1640,9 @@ function postDiscordEvent_(eventId, eventType, entityId, webhookUrl, content) {
 function updateOutboxEvent_(eventId, updates) {
   const row = readObjectsWithRows_(SHEETS.outbox).find(item => String(item.eventId || '') === String(eventId));
   if (!row) throw new Error('Outbox event not found.');
+  if (String(row.status || '') === 'cancelled') {
+    throw new Error('Outbox event belongs to a cancelled order and cannot be retried.');
+  }
   writeObjectAtRow_(sheet_(SHEETS.outbox), row._row, updates);
 }
 
@@ -1528,6 +1677,10 @@ function retryOutboxEvent_(input) {
     reconcileOutboxEntity_(row);
     return { ok:true, skipped:true, status:'sent', eventId:eventId };
   }
+  const order = getOrderRow_(row.entityId);
+  if (order && normalizeOrderStatus_(order) === 'cancelled') {
+    throw new Error('Outbox event belongs to a cancelled order and cannot be retried.');
+  }
   if (String(row.status || '') === 'unknown' && !bool_(input.confirmUnknown)) {
     throw new Error('Unknown provider result requires explicit confirmUnknown before retry.');
   }
@@ -1554,6 +1707,7 @@ function reconcileOutboxEntity_(event) {
   const entityId = String(event.entityId || '');
   const row = readObjectsWithRows_(SHEETS.orders).find(item => String(item.orderId || '') === entityId);
   if (!row) return;
+  if (normalizeOrderStatus_(row) === 'cancelled') return;
   const actor = adminActor_();
   if (eventType === 'new_order') {
     writeObjectAtRow_(sheet_(SHEETS.orders), row._row, {

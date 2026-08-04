@@ -35,5 +35,23 @@ The script creates these tabs automatically:
 - `EmployeePayouts`
 - `AuditLog`
 - `DeliveryHistory`
+- `Outbox`
+
+## Cancelling an order
+
+Verified managers can cancel an active order from the Manager order card.
+Cancellation is deliberately non-destructive:
+
+- the order and its targets are marked `cancelled`;
+- targets disappear from active spy views for employees and managers;
+- claims and assignments are cleared;
+- submissions, payments, payouts and audit history are retained;
+- pending/failed Outbox events are stopped;
+- ambiguous Discord outcomes remain `unknown` for manual reconciliation;
+- delivered or closed orders cannot be cancelled.
+
+The `Orders` schema adds `cancelledAt`, `cancelledBy`, `cancelReason`, and
+`cancelOperationId`. Deploy the updated backend before the frontend so
+`ensureSheets_()` can append these fields safely.
 
 This is payment tracking only. It does not process real payments.

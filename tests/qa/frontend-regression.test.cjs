@@ -45,3 +45,31 @@ test('manager review sends explicit submission version and stable operation ID',
   const reconcileEnd = html.indexOf('async function claim(', reconcileStart);
   assert.doesNotMatch(html.slice(reconcileStart, reconcileEnd), /await call\(/);
 });
+
+test('manager can cancel an order with a stable request ID and explicit warning', () => {
+  assert.match(html, /async function cancelOrder\(orderId\)/);
+  assert.match(html, /action:'cancelOrder'/);
+  assert.match(html, /getOrCreateOperationRequestId\('cancelorder'/);
+  assert.match(html, /Targets will disappear from active spy views/);
+  assert.match(html, /Ledger rows, submissions, payments and audit history will be preserved/);
+  assert.match(html, /'Cancel order', \(\) => cancelOrder\(order\.orderId\)/);
+  assert.match(html, /button\.danger/);
+  assert.match(html, /state\.tasks = state\.tasks\.filter\(task => String\(task\.orderId/);
+  assert.match(html, /was cancelled, but refresh failed/);
+});
+
+test('admin opens on a compact attention overview with details collapsed', () => {
+  assert.match(html, /id="manager-attention"/);
+  assert.match(html, /What needs attention right now/);
+  assert.match(html, /data-manager-section="orders-section"/);
+  assert.match(html, /function openManagerSection\(sectionId\)/);
+  assert.doesNotMatch(html, /<details class="manager-accordion"[^>]*\sopen[\s>]/);
+});
+
+test('admin hides finished orders and empty automation queues by default', () => {
+  assert.match(html, /managerOrders:"active"/);
+  assert.match(html, /All, including finished/);
+  assert.match(html, /\['cancelled','delivered','closed'\]\.includes\(getOrderStatus\(orderId\)\)/);
+  assert.match(html, /visibleGroups\.length \? visibleGroups\.map/);
+  assert.match(html, /No automation queues need attention/);
+});

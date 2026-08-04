@@ -95,6 +95,7 @@ button {
 button:hover { opacity: .88; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 button.secondary, .tab, #theme-toggle { background: var(--surface); color: var(--text); border-color: var(--line); }
+button.danger { background: var(--danger); color: #fff; border-color: var(--danger); }
 .tabs { display: flex; gap: 6px; margin: 0 0 14px; flex-wrap: wrap; }
 .tab {
   padding: 7px 10px;
@@ -286,6 +287,19 @@ body:not(.is-admin) .manager-only { display:none !important; }
   list-style: none;
 }
 .manager-accordion > summary::-webkit-details-marker { display: none; }
+.manager-accordion > summary::after { content: '+'; float:right; color:var(--muted); font-size:18px; line-height:1; }
+.manager-accordion[open] > summary::after { content: '\2212'; }
+.manager-home { border:1px solid var(--line); border-radius:var(--radius); background:var(--card); padding:16px; }
+.manager-home-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:12px; }
+.manager-home-title { font-size:20px; font-weight:680; letter-spacing:-.02em; }
+.manager-quick-actions { display:flex; flex-wrap:wrap; gap:8px; margin:4px 0 14px; }
+.manager-attention { display:grid; gap:8px; }
+.manager-attention-item { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:var(--surface); }
+.manager-attention-item strong { display:block; }
+.manager-attention-item .muted { margin-top:2px; }
+.manager-all-clear { padding:12px; border:1px solid color-mix(in srgb, var(--good) 40%, var(--line)); border-radius:10px; background:color-mix(in srgb, var(--good) 8%, transparent); }
+.dash-card.needs-attention { border-color:color-mix(in srgb, var(--warn) 60%, var(--line)); }
+.order-list-tools { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
 .manager-section-body { padding: 0 12px 12px; display: grid; gap: 12px; }
 .manager-section-body > .card { margin-top: 0 !important; }
 .diagnostic-grid { display:grid; gap:8px; }
@@ -442,9 +456,22 @@ body:not(.is-admin) .manager-only { display:none !important; }
     </section>
 
     <section id="tab-manage" class="manager-only" hidden>
-      <div id="manager-summary" class="dashboard"></div>
-      <details class="manager-accordion" id="automation-card" open>
-        <summary>Automation</summary>
+      <div class="manager-home">
+        <div class="manager-home-head">
+          <div><div class="manager-home-title">Admin overview</div><div class="muted">What needs attention right now.</div></div>
+          <button id="manager-refresh" class="secondary">Refresh</button>
+        </div>
+        <div id="manager-summary" class="dashboard"></div>
+        <div id="manager-quick-actions" class="manager-quick-actions">
+          <button class="secondary" data-manager-section="order-intake-section">Add order or targets</button>
+          <button class="secondary" data-manager-section="orders-section">View active orders</button>
+          <button class="secondary" data-manager-section="review-section">Review submissions</button>
+          <button class="secondary" data-manager-section="ledger-card">Payments</button>
+        </div>
+        <div id="manager-attention" class="manager-attention"></div>
+      </div>
+      <details class="manager-accordion" id="automation-card">
+        <summary>Automation &amp; delivery</summary>
         <div class="manager-section-body">
           <div class="card"><div class="hd">Order Automation Queues</div><div class="bd grid">
             <div class="muted">Manager-only automation for Torn-money payment confirmation, employee Discord notifications, and customer delivery. Webhook URLs stay server-side.</div>
@@ -457,8 +484,8 @@ body:not(.is-admin) .manager-only { display:none !important; }
         </div>
       </details>
 
-      <details class="manager-accordion" open>
-        <summary>Order Intake</summary>
+      <details class="manager-accordion" id="order-intake-section">
+        <summary>Add orders &amp; targets</summary>
         <div class="manager-section-body">
       <div class="card"><div class="hd">Add Target</div><div class="bd grid">
         <div class="row">
@@ -518,13 +545,13 @@ body:not(.is-admin) .manager-only { display:none !important; }
         </div>
       </details>
 
-      <details class="manager-accordion" open>
-        <summary>Orders & Delivery</summary>
+      <details class="manager-accordion" id="orders-section">
+        <summary>Orders</summary>
         <div class="manager-section-body">
       <div class="card" style="margin-top:12px" id="completed-orders-card">
-        <div class="hd">Orders Ready / Completed Orders</div>
+        <div class="hd">Order overview</div>
         <div class="bd">
-          <div class="muted" style="margin-bottom:10px">Completed means every target in the order is submitted and approved.</div>
+          <div class="order-list-tools"><div class="muted">Active orders are shown by default.</div><select id="order-visibility-filter"><option value="active">Active orders</option><option value="all">All, including finished</option></select></div>
           <div id="completed-orders" class="grid cards"></div>
         </div>
       </div>
@@ -566,8 +593,8 @@ body:not(.is-admin) .manager-only { display:none !important; }
         </div>
       </details>
 
-      <details class="manager-accordion">
-        <summary>Review Queue</summary>
+      <details class="manager-accordion" id="review-section">
+        <summary>Reviews</summary>
         <div class="manager-section-body">
       <div class="card" style="margin-top:12px" id="review-card">
         <div class="hd">Manager Review Queue</div>
@@ -583,7 +610,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
       </details>
 
       <details class="manager-accordion" id="audit-card">
-        <summary>History & Audit - Audit Log</summary>
+        <summary>Audit log</summary>
         <div class="card" style="margin-top:0">
         <div class="hd">Audit Log</div>
         <div class="bd">
@@ -602,7 +629,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
       </details>
 
       <details class="manager-accordion" id="history-card">
-        <summary>History & Audit - Delivery History</summary>
+        <summary>Delivery history</summary>
         <div class="card" style="margin-top:0">
         <div class="hd">Delivery History</div>
         <div class="bd">
@@ -620,7 +647,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
         </div>
       </details>
 
-      <details class="manager-accordion" id="ledger-card" open>
+      <details class="manager-accordion" id="ledger-card">
         <summary>Payments</summary>
         <div class="card" style="margin-top:0">
         <div class="hd">Payments & Payout Ledger</div>
@@ -655,7 +682,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
       </details>
 
       <details class="manager-accordion" id="diagnostics-card">
-        <summary>System Diagnostics</summary>
+        <summary>System</summary>
         <div class="card" style="margin-top:0">
           <div class="hd">Apps Script & Webhooks</div>
           <div class="bd grid">
@@ -680,7 +707,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
 
 <script>
 const DEFAULT_API = "https://script.google.com/macros/s/AKfycbwmvn4x0wmHDllT-IYWINU1OI-DG9Hdk_sEhZUQKmsqJA16y9yOOnAHjJ6NGIqI9WTQ/exec";
-const APP_FRONTEND_VERSION = "2026-07-23-phase5-rc1";
+const APP_FRONTEND_VERSION = "2026-08-05-admin-overview-v1";
 const DEFAULT_KEY = "";
 const STALE_WARNING_MINUTES = 30;
 const STALE_DANGER_MINUTES = 60;
@@ -775,7 +802,7 @@ const state={
   busyTaskIds: new Set(),
   busyTaskActions: {},
   pastes: {},
-  filters: { search:"", status:"open", priority:"all", recent:"today", review:"approved", copyFormat:"compact", audit:"all", history:"" },
+  filters: { search:"", status:"open", priority:"all", recent:"today", review:"approved", copyFormat:"compact", audit:"all", history:"", managerOrders:"active" },
   lastUpdated: "",
   importPreview: [],
   auditLog: [],
@@ -1406,21 +1433,48 @@ function renderDashboard(){
 
 function renderManagerSummary(){
   const el = qs('#manager-summary');
+  const attentionEl = qs('#manager-attention');
   if (!el) return;
   if (!state.adminVerified) {
     el.innerHTML = '';
+    if (attentionEl) attentionEl.innerHTML = '';
     return;
   }
-  const orders = getKnownOrderIds().map(getOrderCompletion);
-  const pendingReview = state.tasks.filter(t => t.status === 'submitted' && String(t.reviewStatus || 'pending_review') === 'pending_review').length;
+  const orders = getAutomationQueueOrders();
+  const activeOrders = orders.filter(order => !['cancelled','delivered','closed'].includes(order.status));
+  const pendingReview = state.tasks.filter(t => t.status === 'submitted' && getReview(t).status === 'pending_review').length;
+  const awaitingPayment = activeOrders.filter(order => order.status === 'awaiting_payment').length;
+  const readyToDeliver = activeOrders.filter(order => order.status === 'ready_to_deliver').length;
+  const staleClaims = state.tasks.filter(isClaimStale).length;
+  const deliveryFailed = activeOrders.filter(order => String(order.order.deliveryStatus || '') === 'failed').length;
+  const missingPrice = activeOrders.filter(order => !order.totalPrice).length;
   const values = [
-    ['Orders in progress', orders.filter(o => !o.complete).length],
-    ['Orders complete', orders.filter(o => o.complete).length],
-    ['Orders missing price', orders.filter(o => !o.totalPrice).length],
-    ['Pending review', pendingReview],
-    ['Webhook health', state.webhookDiagnostics ? webhookHealthLabel(state.webhookDiagnostics) : 'Not checked']
+    ['Active orders', activeOrders.length, false],
+    ['Pending review', pendingReview, pendingReview > 0],
+    ['Awaiting payment', awaitingPayment, awaitingPayment > 0],
+    ['Ready to deliver', readyToDeliver, readyToDeliver > 0],
+    ['Stale claims', staleClaims, staleClaims > 0]
   ];
-  el.innerHTML = values.map(([label,value]) => `<div class="dash-card"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div></div>`).join('');
+  el.innerHTML = values.map(([label,value,attention]) => `<div class="dash-card ${attention ? 'needs-attention' : ''}"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div></div>`).join('');
+  if (!attentionEl) return;
+  const attentionItems = [
+    [deliveryFailed, 'Delivery failed', 'Open automation to retry or inspect the error.', 'automation-card'],
+    [pendingReview, 'Submissions need review', 'Approve or reject submitted spy reports.', 'review-section'],
+    [readyToDeliver, 'Orders are ready to deliver', 'Send approved results to the customer.', 'automation-card'],
+    [awaitingPayment, 'Orders are waiting for payment', 'Confirm Torn money before work starts.', 'automation-card'],
+    [staleClaims, 'Claims may be abandoned', 'Review and release stale claims.', 'review-section'],
+    [missingPrice, 'Active orders are missing a price', 'Set a price so payment totals remain accurate.', 'orders-section']
+  ].filter(([count]) => count > 0);
+  attentionEl.innerHTML = attentionItems.length
+    ? attentionItems.map(([count,title,description,section]) => `<div class="manager-attention-item"><div><strong>${escapeHtml(count)} · ${escapeHtml(title)}</strong><div class="muted">${escapeHtml(description)}</div></div><button class="secondary" data-manager-section="${escapeHtml(section)}">Open</button></div>`).join('')
+    : '<div class="manager-all-clear"><strong>All clear</strong><div class="muted">No orders or claims need immediate attention.</div></div>';
+}
+
+function openManagerSection(sectionId){
+  const section = qs('#' + sectionId);
+  if (!section) return;
+  section.open = true;
+  section.scrollIntoView({ behavior:'smooth', block:'start' });
 }
 
 function webhookHealthLabel(info){
@@ -1873,9 +1927,14 @@ function renderCompletedOrders(){
     el.innerHTML = '';
     return;
   }
-  const orderIds = getKnownOrderIds();
+  const allOrderIds = getKnownOrderIds();
+  const orderIds = allOrderIds.filter(orderId => state.filters.managerOrders === 'all' || !['cancelled','delivered','closed'].includes(getOrderStatus(orderId)));
+  const orderFilter = qs('#order-visibility-filter');
+  if (orderFilter) orderFilter.value = state.filters.managerOrders;
   if (!orderIds.length) {
-    el.innerHTML = '<div class="muted">No orders found yet. Add targets with an Order ID to track completion.</div>';
+    el.innerHTML = allOrderIds.length
+      ? '<div class="muted">No active orders. Choose “All, including finished” to view delivered or cancelled orders.</div>'
+      : '<div class="muted">No orders found yet. Add targets with an Order ID to track completion.</div>';
     return;
   }
   el.innerHTML = '';
@@ -1890,6 +1949,9 @@ function renderCompletedOrders(){
       card.appendChild(bd);
       const notifyStatus = order.order.completionNotificationStatus || 'not sent';
       const newOrderStatus = order.order.newOrderNotificationStatus || 'not sent';
+      const orderStatus = getOrderStatus(order.orderId);
+      const isCancelled = orderStatus === 'cancelled';
+      const isFinal = isCancelled || orderStatus === 'delivered' || orderStatus === 'closed';
       const priceMissing = !order.totalPrice;
       const financial = getOrderFinancialSummary(order.orderId);
       bd.innerHTML = `
@@ -1898,7 +1960,7 @@ function renderCompletedOrders(){
             <div style="font-weight:700">${escapeHtml(order.orderId)}</div>
             <div class="muted">${escapeHtml(order.customer || 'No customer')}</div>
           </div>
-          <span class="pill ${order.complete ? 'status-approved' : 'status-warning'}">${order.approved} / ${order.total} approved</span>
+          <span class="pill ${isCancelled ? 'status-rejected' : (order.complete ? 'status-approved' : 'status-warning')}">${isCancelled ? 'CANCELLED' : order.approved + ' / ' + order.total + ' approved'}</span>
         </div>
         <div class="chip-row">
           <span class="pill">Payment: ${escapeHtml(order.order.paymentStatus || 'unpaid')}</span>
@@ -1906,7 +1968,7 @@ function renderCompletedOrders(){
           <span class="pill">New order: ${escapeHtml(newOrderStatus)}</span>
           <span class="pill">Completion: ${escapeHtml(notifyStatus)}</span>
         </div>
-        <div class="muted" style="margin-top:8px">${order.complete ? 'Ready to notify and send to customer.' : 'Not complete yet: ' + order.approved + ' / ' + order.total + ' approved.'}</div>
+        <div class="muted" style="margin-top:8px">${isCancelled ? 'Cancelled by ' + escapeHtml(order.order.cancelledBy || 'manager') + ': ' + escapeHtml(order.order.cancelReason || 'No reason recorded') : (order.complete ? 'Ready to notify and send to customer.' : 'Not complete yet: ' + order.approved + ' / ' + order.total + ' approved.')}</div>
         <div class="financial-grid">
           <div class="financial-cell"><span>Customer paid</span><strong>${formatMoney(financial.customerPaid)}</strong></div>
           <div class="financial-cell"><span>Customer remaining</span><strong>${priceMissing ? 'Price missing' : formatMoney(financial.customerRemaining)}</strong></div>
@@ -1919,19 +1981,20 @@ function renderCompletedOrders(){
       const priceTools = document.createElement('div');
       priceTools.className = 'price-tools';
       priceTools.innerHTML = `
-        <input type="number" min="0" step="1" placeholder="Price per spy" data-price-per-spy="${escapeHtml(order.orderId)}">
-        <input type="number" min="0" step="1" placeholder="Order total" data-price-total="${escapeHtml(order.orderId)}">
+        <input type="number" min="0" step="1" placeholder="Price per spy" data-price-per-spy="${escapeHtml(order.orderId)}" ${isFinal ? 'disabled' : ''}>
+        <input type="number" min="0" step="1" placeholder="Order total" data-price-total="${escapeHtml(order.orderId)}" ${isFinal ? 'disabled' : ''}>
       `;
-      addButton(priceTools, 'Set price', () => setOrderPriceFromCard(order.orderId), false, 'secondary');
+      addButton(priceTools, 'Set price', () => setOrderPriceFromCard(order.orderId), isFinal, 'secondary');
       bd.appendChild(priceTools);
       const row = document.createElement('div');
       row.className = 'row';
       row.style.marginTop = '10px';
       bd.appendChild(row);
-      addButton(row, 'Copy approved results', () => copyOrderResults(order.orderId), order.approved < 1);
-      addButton(row, 'Notify completed order', () => sendOrderCompletionNotification(order.orderId), !order.complete || notifyStatus === 'sent');
-      addButton(row, 'Mark completion sent', () => sendOrderCompletionNotification(order.orderId, true), !order.complete);
-      addButton(row, 'Send new order Discord', () => sendNewOrderNotification(order.orderId), newOrderStatus === 'sent');
+      addButton(row, 'Copy approved results', () => copyOrderResults(order.orderId), isFinal || order.approved < 1);
+      addButton(row, 'Notify completed order', () => sendOrderCompletionNotification(order.orderId), isFinal || !order.complete || notifyStatus === 'sent');
+      addButton(row, 'Mark completion sent', () => sendOrderCompletionNotification(order.orderId, true), isFinal || !order.complete);
+      addButton(row, 'Send new order Discord', () => sendNewOrderNotification(order.orderId), isFinal || newOrderStatus === 'sent');
+      addButton(row, 'Cancel order', () => cancelOrder(order.orderId), isFinal, 'danger');
       el.appendChild(card);
     });
 }
@@ -1957,14 +2020,14 @@ function renderAutomationQueues(){
     ['Ready to deliver', order => order.status === 'ready_to_deliver'],
     ['Delivery failed', order => String(order.order.deliveryStatus || '') === 'failed']
   ];
-  const orders = getAutomationQueueOrders();
-  el.innerHTML = groups.map(([title, predicate]) => {
-    const rows = orders.filter(predicate);
+  const orders = getAutomationQueueOrders().filter(order => !['cancelled','delivered','closed'].includes(order.status));
+  const visibleGroups = groups.map(([title, predicate]) => [title, orders.filter(predicate)]).filter(([,rows]) => rows.length);
+  el.innerHTML = visibleGroups.length ? visibleGroups.map(([title, rows]) => {
     return `<div class="automation-group">
       <div class="employee-section-title">${escapeHtml(title)} <span class="muted">(${rows.length})</span></div>
-      <div class="grid">${rows.length ? rows.map(renderAutomationOrderHtml).join('') : '<div class="muted">No orders in this queue.</div>'}</div>
+      <div class="grid">${rows.map(renderAutomationOrderHtml).join('')}</div>
     </div>`;
-  }).join('');
+  }).join('') : '<div class="manager-all-clear"><strong>No automation queues need attention.</strong></div>';
 }
 
 function renderAutomationOrderHtml(order){
@@ -3989,6 +4052,67 @@ async function markOrderDelivered(orderId){
   }
 }
 
+async function cancelOrder(orderId){
+  const reasonInput = prompt('Why is order ' + orderId + ' being cancelled? This will remove all of its targets from active spy views.');
+  if (reasonInput == null) return;
+  const reason = reasonInput.trim();
+  if (!reason) {
+    setStatus('Cancellation stopped: a reason is required.');
+    return;
+  }
+  const financial = getOrderFinancialSummary(orderId);
+  const warnings = [];
+  if (financial.customerPaid > 0) warnings.push('Recorded customer payments are retained: ' + formatMoney(financial.customerPaid));
+  if (financial.employeePaid > 0 || financial.employeeQueued > 0) warnings.push('Employee payouts are retained and must be reconciled separately.');
+  if (!confirm([
+    'Cancel order ' + orderId + '?',
+    '',
+    'Reason: ' + reason,
+    'Targets will disappear from active spy views.',
+    'Ledger rows, submissions, payments and audit history will be preserved.',
+    ...warnings,
+  ].filter(Boolean).join('\n'))) return;
+
+  const payload = { action:'cancelOrder', orderId, reason };
+  const request = getOrCreateOperationRequestId('cancelorder', payload);
+  payload.requestId = request.requestId;
+  const busyKey = 'cancelOrder:' + orderId;
+  if (state.busyActions[busyKey]) return;
+  state.busyActions[busyKey] = true;
+  setStatus('Cancelling order ' + orderId + '...');
+  try{
+    const result = await call('', 'POST', payload);
+    sessionStorage.removeItem(request.key);
+    addAuditLog('manager_cancelled_order', orderId, reason);
+    state.tasks = state.tasks.filter(task => String(task.orderId || '') !== String(orderId));
+    state.orders = state.orders.map(order => String(order.orderId || '') === String(orderId)
+      ? Object.assign({}, order, {
+        orderStatus:'cancelled',
+        cancelReason:reason,
+        cancelledBy:state.me || 'manager',
+        cancelledAt:new Date().toISOString(),
+      })
+      : order);
+    render();
+    const ledgerWarning = (result.activeCustomerPayments || result.activeEmployeePayouts)
+      ? ' Existing payments or payouts were retained for reconciliation.'
+      : '';
+    const outboxWarning = result.ambiguousOutboxEvents
+      ? ' ' + result.ambiguousOutboxEvents + ' ambiguous Outbox event(s) require manual reconciliation.'
+      : '';
+    try{
+      await refresh();
+      setStatus('Order ' + orderId + ' cancelled. ' + result.targetCount + ' target(s) removed from active views.' + ledgerWarning + outboxWarning);
+    }catch(refreshError){
+      setStatus('Order ' + orderId + ' was cancelled, but refresh failed. The targets remain hidden locally; retry Refresh to confirm canonical state. ' + friendlyErrorMessage(refreshError));
+    }
+  }catch(e){
+    setStatus('Cancel order failed: ' + friendlyErrorMessage(e));
+  }finally{
+    delete state.busyActions[busyKey];
+  }
+}
+
 async function checkAutomation(){
   try{
     const result = await call('', 'POST', { action:'getAutomationDiagnostics', actor: state.me || 'manager' });
@@ -4084,6 +4208,12 @@ async function openJobSpecial(target){
   const forgetTornBtn=qs('#forget-torn-key'); if(forgetTornBtn) forgetTornBtn.addEventListener('click',forgetTornKey);
   const tornKeyInput=qs('#torn-api-key'); if(tornKeyInput) tornKeyInput.addEventListener('input',()=>{ state.torn.apiKey = tornKeyInput.value.trim(); state.torn.verified = null; if (state.torn.apiKey) sessionStorage.setItem(TORN_EMPLOYEE_API_KEY, state.torn.apiKey); else sessionStorage.removeItem(TORN_EMPLOYEE_API_KEY); });
   const managerLoginBtn=qs('#manager-login-btn'); if(managerLoginBtn) managerLoginBtn.addEventListener('click',loginManager);
+  const managerRefreshBtn=qs('#manager-refresh'); if(managerRefreshBtn) managerRefreshBtn.addEventListener('click',refresh);
+  const managerTab=qs('#tab-manage');
+  if (managerTab) managerTab.addEventListener('click', event => {
+    const action = event.target.closest('[data-manager-section]');
+    if (action) openManagerSection(action.getAttribute('data-manager-section'));
+  });
   const adminInput=qs('#adm'); if(adminInput) adminInput.addEventListener('keydown',(event)=>{ if(event.key === 'Enter'){ event.preventDefault(); loginManager(); } });
   const addBtn =qs('#m-add');  if(addBtn)  addBtn.addEventListener('click',addTask);
   const previewImportBtn=qs('#m-preview-import'); if(previewImportBtn) previewImportBtn.addEventListener('click',previewImportTargets);
@@ -4093,6 +4223,7 @@ async function openJobSpecial(target){
   const priorityFilter=qs('#priority-filter'); if(priorityFilter) priorityFilter.addEventListener('change',()=>{ state.filters.priority=priorityFilter.value; renderTargets(); });
   const recentFilter=qs('#recent-filter'); if(recentFilter) recentFilter.addEventListener('change',()=>{ state.filters.recent=recentFilter.value; renderRecentlySubmitted(); });
   const reviewFilter=qs('#review-filter'); if(reviewFilter) reviewFilter.addEventListener('change',()=>{ state.filters.review=reviewFilter.value; renderRecentlySubmitted(); });
+  const orderVisibilityFilter=qs('#order-visibility-filter'); if(orderVisibilityFilter) orderVisibilityFilter.addEventListener('change',()=>{ state.filters.managerOrders=orderVisibilityFilter.value; renderCompletedOrders(); });
   const auditFilter=qs('#audit-filter'); if(auditFilter) auditFilter.addEventListener('change',()=>{ state.filters.audit=auditFilter.value; renderAuditLog(); });
   const historySearch=qs('#history-search'); if(historySearch) historySearch.addEventListener('input',()=>{ state.filters.history=historySearch.value; renderHistory(); });
   const archiveVisible=qs('#archive-visible'); if(archiveVisible) archiveVisible.addEventListener('click',archiveVisibleApproved);

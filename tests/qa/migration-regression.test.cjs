@@ -139,6 +139,11 @@ test('appends follow live header order after migration of the real legacy layout
   h.spreadsheet.getSheetByName('Orders').data = [actualLegacyOrderHeaders.slice()];
   h.context.ensureSheets_();
 
+  assert.deepEqual(
+    h.spreadsheet.getSheetByName('Orders').data[0].slice(-4),
+    ['cancelledAt', 'cancelledBy', 'cancelReason', 'cancelOperationId'],
+  );
+
   h.context.appendObject_('Targets', {
     id: 'phase5-target',
     targetName: 'Phase 5 Target',
