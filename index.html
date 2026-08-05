@@ -743,6 +743,9 @@ function setStatus(msg) {
 }
 function friendlyErrorMessage(err) {
   const msg = String((err && err.message) || err || '');
+  if (/Unknown action:\s*cancelOrder/i.test(msg)) {
+    return 'The Apps Script backend is older than this webpage and does not support order cancellation yet. Deploy apps-script/Code.gs as a new Web App version, then refresh this page.';
+  }
   if (/UrlFetchApp\.fetch|script\.external_request|external request authorization/i.test(msg)) {
     return 'Discord sending needs Apps Script authorization. Open the Apps Script editor, run a test function once, approve external request permission, then redeploy.';
   }
@@ -4107,7 +4110,9 @@ async function cancelOrder(orderId){
       setStatus('Order ' + orderId + ' was cancelled, but refresh failed. The targets remain hidden locally; retry Refresh to confirm canonical state. ' + friendlyErrorMessage(refreshError));
     }
   }catch(e){
-    setStatus('Cancel order failed: ' + friendlyErrorMessage(e));
+    const message = friendlyErrorMessage(e);
+    setStatus('Cancel order failed: ' + message);
+    if (/backend is older than this webpage/i.test(message)) openManagerSection('diagnostics-card');
   }finally{
     delete state.busyActions[busyKey];
   }

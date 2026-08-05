@@ -56,6 +56,8 @@ test('manager can cancel an order with a stable request ID and explicit warning'
   assert.match(html, /button\.danger/);
   assert.match(html, /state\.tasks = state\.tasks\.filter\(task => String\(task\.orderId/);
   assert.match(html, /was cancelled, but refresh failed/);
+  assert.match(html, /Unknown action:\\s\*cancelOrder/);
+  assert.match(html, /Apps Script backend is older than this webpage/);
 });
 
 test('admin opens on a compact attention overview with details collapsed', () => {
