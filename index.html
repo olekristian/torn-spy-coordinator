@@ -1101,7 +1101,12 @@ async function loginWithTorn(){
   } catch (e) {
     clearTornEmployeeSession();
     state.accessVerified = false;
-    setStatus('Torn sign-in failed: ' + friendlyErrorMessage(e));
+    const message = friendlyErrorMessage(e);
+    if (/Invalid access code/i.test(message)) {
+      setStatus('Torn sign-in failed: the deployed Apps Script backend is out of date and treated the Torn key as a legacy access code. Deploy the current apps-script/Code.gs as a new Web App version, then try again.');
+    } else {
+      setStatus('Torn sign-in failed: ' + message);
+    }
   } finally {
     if (button) { button.disabled = false; button.textContent = 'Sign in with Torn'; }
     updateSetupState();
