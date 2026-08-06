@@ -12,7 +12,15 @@ Setup:
 2. Extensions -> Apps Script.
 3. Paste `apps-script/Code.gs`.
 4. In Project Settings, enable the manifest file and copy `apps-script/appsscript.json` so the deployment explicitly requests Sheets, script properties, and external request access.
-5. Set Script Properties: `API_KEY`, `ADMIN_KEY`, and optionally `MANAGER_DISCORD_WEBHOOK_URL` and `EMPLOYEE_DISCORD_WEBHOOK_URL`.
+5. Set Script Properties: `API_KEY`, `ADMIN_KEY`, `EMPLOYEE_ACCESS_MAP`, and optionally `MANAGER_DISCORD_WEBHOOK_URL` and `EMPLOYEE_DISCORD_WEBHOOK_URL`.
+
+`EMPLOYEE_ACCESS_MAP` must be a JSON object mapping each employee's private access code to their canonical display name. The shared `API_KEY` is read-only for employee actions; claiming, releasing, and submitting require a mapped personal code. Example:
+
+```json
+{"unique-code-for-kattemannen":"Kattemannen","unique-code-for-alice":"Alice"}
+```
+
+Use unique random codes, do not reuse `ADMIN_KEY`, and distribute each code only to its employee. Script Property changes take effect without creating a new deployment version.
 
 `MANAGER_DISCORD_WEBHOOK_URL` is used for completed order notifications. `EMPLOYEE_DISCORD_WEBHOOK_URL` is used for new order notifications. `DISCORD_WEBHOOK_URL` still works as a fallback if you only want one webhook.
 

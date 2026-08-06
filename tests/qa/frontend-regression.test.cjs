@@ -81,3 +81,11 @@ test('mobile setup controls do not overlay the spy submission form', () => {
   assert.match(mobileCss, /\.top-controls\s*\{[^}]*position:\s*static/);
   assert.match(mobileCss, /backdrop-filter:\s*none/);
 });
+
+test('shared read-only access explains how to enable employee actions', () => {
+  assert.match(html, /Individual employee access is required/);
+  assert.match(html, /This access code is read-only/);
+  assert.match(html, /EMPLOYEE_ACCESS_MAP/);
+  assert.match(html, /Claim failed: '\+friendlyErrorMessage\(e\)/);
+  assert.match(html, /Submit failed: ' \+ friendlyErrorMessage\(e\)/);
+});

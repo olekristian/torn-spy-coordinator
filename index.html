@@ -744,6 +744,9 @@ function setStatus(msg) {
 }
 function friendlyErrorMessage(err) {
   const msg = String((err && err.message) || err || '');
+  if (/Individual employee access is required/i.test(msg)) {
+    return 'This access code is read-only. Claiming and submitting require a personal employee code registered in the Apps Script property EMPLOYEE_ACCESS_MAP. Ask the manager for your personal code, enter it under Access code, and refresh.';
+  }
   if (/Unknown action:\s*cancelOrder/i.test(msg)) {
     return 'The Apps Script backend is older than this webpage and does not support order cancellation yet. Deploy apps-script/Code.gs as a new Web App version, then refresh this page.';
   }
@@ -2223,7 +2226,7 @@ async function claim(id){
   }catch(e){
     setTaskBusy(id, false);
     await refresh();
-    setStatus('Claim failed: '+String(e.message||e));
+    setStatus('Claim failed: '+friendlyErrorMessage(e));
   }
 }
 async function unclaim(id){
@@ -2351,7 +2354,7 @@ async function submitSpy(id){
     restoreTaskPaste(id, raw);
     updateSpyPreview(id);
     const err = document.getElementById('err');
-    if (err) err.textContent = 'Submit failed: ' + (e.message||e);
+    if (err) err.textContent = 'Submit failed: ' + friendlyErrorMessage(e);
     addAuditLog('submission_error', '', e.message || String(e));
   }
 }
