@@ -98,9 +98,8 @@ test('Torn employee sign-in stores only a temporary session outside localStorage
   assert.match(html, /payload\.sessionToken = state\.sessionToken/);
   assert.match(html, /function isOwnedByCurrentEmployee/);
   assert.match(html, /claimedByTornId/);
-  assert.match(html, /user=basic,reports,profile&company=employees/);
-  assert.match(html, /user → basic/);
-  assert.match(html, /company → employees/);
+  assert.match(html, /user=reports,profile/);
+  assert.match(html, /user → profile/);
   assert.match(html, />Create Torn API key</);
   assert.match(html, /deployed Apps Script backend is out of date/);
 });
@@ -111,6 +110,16 @@ test('direct Torn report requests use the Authorization header, not URL credenti
   const source = html.slice(start, end);
   assert.match(source, /Authorization:'ApiKey ' \+ key/);
   assert.doesNotMatch(source, /searchParams\.set\('key'/);
+});
+
+test('Torn key verification uses the v2 key-info endpoint and checks required selections', () => {
+  const start = html.indexOf('async function verifyTornKey');
+  const end = html.indexOf('function forgetTornKey', start);
+  const source = html.slice(start, end);
+  assert.match(source, /fetchTornEndpoint\('\/v2\/key\/info'\)/);
+  assert.match(source, /userSelections\.includes\('reports'\)/);
+  assert.match(source, /userSelections\.includes\('profile'\)/);
+  assert.doesNotMatch(source, /fetchTornEndpoint\('\/key\/'/);
 });
 
 test('employee spy drafts survive redraws and same-tab mobile reloads', () => {

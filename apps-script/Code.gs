@@ -11,7 +11,7 @@ function _employeeAccessMap_(){
     throw new Error('EMPLOYEE_ACCESS_MAP is not valid JSON.');
   }
 }
-const BACKEND_VERSION = '2026-08-06-draft-continuity-v1';
+const BACKEND_VERSION = '2026-08-06-torn-auth-v2';
 const TORN_API_V2_BASE = 'https://api.torn.com/v2';
 const DEFAULT_TORN_SESSION_HOURS = 8;
 const MANAGER_WEBHOOK_KEYS = ['MANAGER_DISCORD_WEBHOOK_URL','DISCORD_MANAGER_WEBHOOK_URL','MANAGER_WEBHOOK_URL','DISCORD_WEBHOOK_URL'];
@@ -1976,18 +1976,21 @@ function authenticateTorn_(input) {
   const companyId = String(_props().getProperty('TORN_COMPANY_ID') || '').trim();
   if (!/^\d+$/.test(companyId)) throw new Error('TORN_COMPANY_ID is not configured server-side.');
 
-  const profileResponse = tornApiGet_('/user/basic', tornApiKey);
+  const keyInfoResponse = tornApiGet_('/key/info', tornApiKey);
+  const keyInfo = keyInfoResponse && keyInfoResponse.info || keyInfoResponse || {};
+  const keyUser = keyInfo.user || {};
+  const tornId = String(keyUser.id || keyUser.player_id || '').trim();
+  const memberCompanyId = String(keyUser.company_id || '').trim();
+  if (!/^\d+$/.test(tornId)) throw new Error('Torn did not return a valid key owner identity.');
+  if (memberCompanyId !== companyId) throw new Error('This Torn account is not a current employee of the configured company.');
+
+  const profileResponse = tornApiGet_('/user/profile', tornApiKey);
   const profile = profileResponse && profileResponse.profile || profileResponse || {};
-  const tornId = String(profile.id || profile.player_id || '').trim();
+  const profileTornId = String(profile.id || profile.player_id || '').trim();
   const name = String(profile.name || '').trim();
-  if (!/^\d+$/.test(tornId) || !name) throw new Error('Torn did not return a valid player identity.');
+  if (profileTornId !== tornId || !name) throw new Error('Torn did not return a matching player profile for this key.');
 
-  const employeesResponse = tornApiGet_('/company/' + encodeURIComponent(companyId) + '/employees', tornApiKey);
-  const employees = Array.isArray(employeesResponse && employeesResponse.employees) ? employeesResponse.employees : [];
-  const membership = employees.find(employee => String(employee && (employee.id || employee.player_id) || '') === tornId);
-  if (!membership) throw new Error('This Torn account is not a current employee of the configured company.');
-
-  const canonicalName = String(membership.name || name).trim() || name;
+  const canonicalName = name;
   const issuedAt = Date.now();
   const configuredHours = Number(_props().getProperty('TORN_SESSION_HOURS') || DEFAULT_TORN_SESSION_HOURS);
   const sessionHours = Math.max(1, Math.min(24, Number.isFinite(configuredHours) ? configuredHours : DEFAULT_TORN_SESSION_HOURS));
@@ -2009,11 +2012,8 @@ function tornApiGet_(path, tornApiKey) {
     const apiError = data && data.error;
     const message = apiError && (apiError.error || apiError.message) || 'HTTP ' + code;
     if (Number(apiError && apiError.code) === 16) {
-      if (/^\/user\/basic(?:\?|$)/.test(path)) {
-        throw new Error('Torn API authentication failed: this Custom key is missing user → basic access. Create or update the key with user → basic and company → employees.');
-      }
-      if (/^\/company\/[^/]+\/employees(?:\?|$)/.test(path)) {
-        throw new Error('Torn API authentication failed: this Custom key is missing company → employees access. Create or update the key with user → basic and company → employees.');
+      if (/^\/user\/profile(?:\?|$)/.test(path)) {
+        throw new Error('Torn API authentication failed: this Custom key is missing user → profile access. Create a replacement key with the Torn API key button.');
       }
     }
     throw new Error('Torn API authentication failed: ' + message);

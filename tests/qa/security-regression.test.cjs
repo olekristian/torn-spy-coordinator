@@ -39,11 +39,11 @@ test('Torn sign-in verifies identity and company membership without persisting t
     urlFetchResponse(url, request) {
       assert.equal(request.headers.Authorization, 'ApiKey ' + rawKey);
       assert.doesNotMatch(url, /torn-secret-key|[?&]key=/);
-      if (url.endsWith('/user/basic')) {
-        return { code:200, body:JSON.stringify({ profile:{ id:9001, name:'Kattemannen' } }) };
+      if (url.endsWith('/key/info')) {
+        return { code:200, body:JSON.stringify({ info:{ user:{ id:9001, company_id:12345 } } }) };
       }
-      if (url.endsWith('/company/12345/employees')) {
-        return { code:200, body:JSON.stringify({ employees:[{ id:9001, name:'Kattemannen' }] }) };
+      if (url.endsWith('/user/profile')) {
+        return { code:200, body:JSON.stringify({ profile:{ id:9001, name:'Kattemannen' } }) };
       }
       throw new Error('Unexpected URL: ' + url);
     },
@@ -64,31 +64,23 @@ test('Torn sign-in verifies identity and company membership without persisting t
 });
 
 test('Torn sign-in explains missing Custom key selections', () => {
-  const missingBasic = createHarness({
-    urlFetchResponse() {
-      return { code:403, body:JSON.stringify({ error:{ code:16, error:'Access level of this key is not high enough' } }) };
-    },
-  }).request({ action:'authenticateTorn', tornApiKey:'custom-key' });
-  assert.equal(missingBasic.ok, false);
-  assert.match(missingBasic.error, /missing user → basic access/);
-
-  const missingEmployees = createHarness({
+  const missingProfile = createHarness({
     urlFetchResponse(url) {
-      if (url.endsWith('/user/basic')) {
-        return { code:200, body:JSON.stringify({ profile:{ id:9001, name:'Kattemannen' } }) };
+      if (url.endsWith('/key/info')) {
+        return { code:200, body:JSON.stringify({ info:{ user:{ id:9001, company_id:12345 } } }) };
       }
       return { code:403, body:JSON.stringify({ error:{ code:16, error:'Access level of this key is not high enough' } }) };
     },
   }).request({ action:'authenticateTorn', tornApiKey:'custom-key' });
-  assert.equal(missingEmployees.ok, false);
-  assert.match(missingEmployees.error, /missing company → employees access/);
+  assert.equal(missingProfile.ok, false);
+  assert.match(missingProfile.error, /missing user → profile access/);
 });
 
 test('tampered Torn sessions and non-company Torn users are rejected', () => {
   const h = createHarness({
     urlFetchResponse(url) {
-      if (url.endsWith('/user/basic')) return { code:200, body:JSON.stringify({ profile:{ id:9002, name:'Outsider' } }) };
-      return { code:200, body:JSON.stringify({ employees:[{ id:9001, name:'Kattemannen' }] }) };
+      if (url.endsWith('/key/info')) return { code:200, body:JSON.stringify({ info:{ user:{ id:9002, company_id:99999 } } }) };
+      throw new Error('Profile should not be requested for an outsider.');
     },
   });
   const denied = h.request({ action:'authenticateTorn', tornApiKey:'outsider-key' });
