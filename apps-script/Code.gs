@@ -11,7 +11,7 @@ function _employeeAccessMap_(){
     throw new Error('EMPLOYEE_ACCESS_MAP is not valid JSON.');
   }
 }
-const BACKEND_VERSION = '2026-08-06-torn-session-v1';
+const BACKEND_VERSION = '2026-08-06-draft-continuity-v1';
 const TORN_API_V2_BASE = 'https://api.torn.com/v2';
 const DEFAULT_TORN_SESSION_HOURS = 8;
 const MANAGER_WEBHOOK_KEYS = ['MANAGER_DISCORD_WEBHOOK_URL','DISCORD_MANAGER_WEBHOOK_URL','MANAGER_WEBHOOK_URL','DISCORD_WEBHOOK_URL'];

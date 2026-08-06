@@ -107,3 +107,37 @@ test('direct Torn report requests use the Authorization header, not URL credenti
   assert.match(source, /Authorization:'ApiKey ' \+ key/);
   assert.doesNotMatch(source, /searchParams\.set\('key'/);
 });
+
+test('employee spy drafts survive redraws and same-tab mobile reloads', () => {
+  assert.match(html, /EMPLOYEE_DRAFTS_KEY\s*=\s*"torn_employee_spy_drafts_session"/);
+  assert.match(html, /sessionStorage\.setItem\(EMPLOYEE_DRAFTS_KEY/);
+  assert.match(html, /function loadTaskDrafts\(/);
+  assert.match(html, /loadTaskDrafts\(\)/);
+  assert.match(html, /saveTaskDraft\(t\.id, ta\.value \|\| '', t\)/);
+  assert.match(html, /ta\.value = state\.pastes\[String\(t\.id\)\] \|\| ''/);
+  const saveStart = html.indexOf('function savePastes()');
+  const saveEnd = html.indexOf('function loadTaskDrafts()', saveStart);
+  assert.doesNotMatch(html.slice(saveStart, saveEnd), /state\.pastes\s*=\s*\{\}/);
+});
+
+test('confirmed submission leaves active claims even when refresh fails', () => {
+  const start = html.indexOf('async function submitSpy(id)');
+  const end = html.indexOf('\n\nfunction parseImportTarget', start);
+  const source = html.slice(start, end);
+  assert.match(source, /submissionConfirmed = true/);
+  assert.match(source, /clearTaskDraft\(id\)/);
+  assert.match(source, /task\.status = 'submitted'/);
+  assert.match(source, /const refreshSucceeded = await refresh\(\)/);
+  assert.match(source, /Result submitted, but the latest queue could not be refreshed/);
+  assert.match(source, /if \(submissionConfirmed\)/);
+});
+
+test('employees can recover orphaned drafts and see their recent submissions', () => {
+  assert.match(html, /function renderEmployeeContinuity\(/);
+  assert.match(html, /Recovered draft:/);
+  assert.match(html, /Copy draft/);
+  assert.match(html, /Delete draft/);
+  assert.match(html, /function getEmployeeRecentSubmissions\(/);
+  assert.match(html, /Your recent activity/);
+  assert.match(html, /Submitted:/);
+});

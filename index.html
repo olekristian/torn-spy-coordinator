@@ -717,7 +717,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
 
 <script>
 const DEFAULT_API = "https://script.google.com/macros/s/AKfycbwmvn4x0wmHDllT-IYWINU1OI-DG9Hdk_sEhZUQKmsqJA16y9yOOnAHjJ6NGIqI9WTQ/exec";
-const APP_FRONTEND_VERSION = "2026-08-06-torn-session-v1";
+const APP_FRONTEND_VERSION = "2026-08-06-draft-continuity-v1";
 const DEFAULT_KEY = "";
 const STALE_WARNING_MINUTES = 30;
 const STALE_DANGER_MINUTES = 60;
@@ -730,6 +730,7 @@ const THEME_KEY = "torn_theme";
 const TORN_EMPLOYEE_API_KEY = "torn_employee_api_key_session";
 const TORN_EMPLOYEE_SESSION_TOKEN = "torn_employee_session_token";
 const TORN_EMPLOYEE_SESSION_EXPIRY = "torn_employee_session_expiry";
+const EMPLOYEE_DRAFTS_KEY = "torn_employee_spy_drafts_session";
 const TORN_PRIVACY_ACK_KEY = "torn_employee_api_privacy_ack";
 const TORN_API_BASE = "https://api.torn.com";
 const TORN_CUSTOM_KEY_BUILDER_URL = "https://www.torn.com/preferences.php#tab=api?step=addNewKey&title=Bring_Em_Closer_Spy_Tool&user=reports,profile";
@@ -831,6 +832,7 @@ const state={
   busyTaskIds: new Set(),
   busyTaskActions: {},
   pastes: {},
+  draftMeta: {},
   filters: { search:"", status:"open", priority:"all", recent:"today", review:"approved", copyFormat:"compact", audit:"all", history:"", managerOrders:"active" },
   lastUpdated: "",
   importPreview: [],
@@ -941,6 +943,7 @@ function loadSettings(){
   }
   state.admin = sessionStorage.getItem('torn_admin_key') || '';
   state.torn.apiKey = sessionStorage.getItem(TORN_EMPLOYEE_API_KEY) || '';
+  loadTaskDrafts();
   localStorage.removeItem('torn_admin_key');
   try{ state.auditLog = JSON.parse(localStorage.getItem(AUDIT_KEY) || '[]'); }catch(_){ state.auditLog = []; }
   try{ state.reviews = JSON.parse(localStorage.getItem(REVIEW_KEY) || '{}'); }catch(_){ state.reviews = {}; }
@@ -1404,20 +1407,72 @@ function getMissingStats(p){
 }
 
 function savePastes(){
-  state.pastes = {};
   const tas = document.querySelectorAll('textarea[id^="paste-"]');
   tas.forEach(ta => {
     const id = ta.id.substring(6); // Remove 'paste-' prefix
-    if (ta.value && ta.value.trim()) {
-      state.pastes[id] = ta.value;
-    }
+    const task = state.tasks.find(row => String(row.id) === String(id));
+    saveTaskDraft(id, ta.value || '', task);
   });
+}
+
+function loadTaskDrafts(){
+  let stored = {};
+  try { stored = JSON.parse(sessionStorage.getItem(EMPLOYEE_DRAFTS_KEY) || '{}'); } catch (_) { stored = {}; }
+  state.pastes = {};
+  state.draftMeta = {};
+  Object.entries(stored || {}).forEach(([id, draft]) => {
+    if (!draft || !String(draft.raw || '').trim()) return;
+    state.pastes[id] = String(draft.raw);
+    state.draftMeta[id] = {
+      targetName:String(draft.targetName || ''),
+      targetId:String(draft.targetId || ''),
+      updatedAt:String(draft.updatedAt || '')
+    };
+  });
+}
+
+function persistTaskDrafts(){
+  const stored = {};
+  Object.entries(state.pastes).forEach(([id, raw]) => {
+    if (!String(raw || '').trim()) return;
+    stored[id] = Object.assign({ raw:String(raw) }, state.draftMeta[id] || {});
+  });
+  if (Object.keys(stored).length) sessionStorage.setItem(EMPLOYEE_DRAFTS_KEY, JSON.stringify(stored));
+  else sessionStorage.removeItem(EMPLOYEE_DRAFTS_KEY);
+}
+
+function saveTaskDraft(id, raw, task){
+  const key = String(id);
+  const value = String(raw || '');
+  if (!value.trim()) {
+    delete state.pastes[key];
+    delete state.draftMeta[key];
+    persistTaskDrafts();
+    return;
+  }
+  state.pastes[key] = value;
+  const current = state.draftMeta[key] || {};
+  state.draftMeta[key] = {
+    targetName:String(task?.targetName || current.targetName || ''),
+    targetId:String(task?.targetId || current.targetId || ''),
+    updatedAt:new Date().toISOString()
+  };
+  persistTaskDrafts();
+}
+
+function clearTaskDraft(id){
+  delete state.pastes[String(id)];
+  delete state.draftMeta[String(id)];
+  persistTaskDrafts();
 }
 
 function restorePastes(){
   Object.keys(state.pastes).forEach(id => {
     const ta = document.getElementById('paste-'+id);
-    if (ta) ta.value = state.pastes[id] || '';
+    if (ta) {
+      ta.value = state.pastes[id] || '';
+      if (ta.value.trim()) updateSpyPreview(id);
+    }
   });
 }
 
@@ -1505,6 +1560,7 @@ function render(){
   renderWebhookDiagnostics();
   renderKnownOrders();
   renderImportPreview();
+  restorePastes();
 }
 
 function renderKnownOrders(){
@@ -1637,6 +1693,60 @@ function getNextEmployeeTarget(){
     || null;
 }
 
+function getEmployeeRecentSubmissions(){
+  return state.tasks
+    .filter(target => String(target.status || '') === 'submitted' && isOwnedByCurrentEmployee(target))
+    .sort((left, right) => Date.parse(right.submittedAt || right.updatedAt || 0) - Date.parse(left.submittedAt || left.updatedAt || 0))
+    .slice(0, 10);
+}
+
+function renderEmployeeContinuity(parent){
+  const recoverableDrafts = Object.entries(state.pastes).filter(([id, raw]) => {
+    if (!String(raw || '').trim()) return false;
+    const target = state.tasks.find(row => String(row.id) === String(id));
+    return !(target && String(target.status || '') === 'claimed' && isOwnedByCurrentEmployee(target));
+  });
+  const recent = getEmployeeRecentSubmissions();
+  if (!recoverableDrafts.length && !recent.length) return;
+
+  const section = document.createElement('div');
+  section.className = 'card employee-section';
+  const title = document.createElement('div');
+  title.className = 'employee-section-title';
+  title.textContent = 'Your recent activity';
+  section.appendChild(title);
+
+  recoverableDrafts.forEach(([id, raw]) => {
+    const meta = state.draftMeta[id] || {};
+    const row = document.createElement('div');
+    row.className = 'employee-target-row';
+    row.innerHTML = `<div><div style="font-weight:650">Recovered draft: ${escapeHtml(meta.targetName || 'Unknown target')}</div><div class="next-target-id">${meta.targetId ? '[' + escapeHtml(meta.targetId) + ']' : 'Target ID unavailable'} · Saved on this device</div></div>`;
+    const actions = document.createElement('div');
+    actions.className = 'employee-target-actions';
+    row.appendChild(actions);
+    addButton(actions, 'Copy draft', async () => {
+      await navigator.clipboard.writeText(String(raw));
+      setStatus('Recovered draft copied.');
+    }, false, 'quiet');
+    addButton(actions, 'Delete draft', () => {
+      if (!window.confirm('Delete this saved draft from this device?')) return;
+      clearTaskDraft(id);
+      render();
+      setStatus('Saved draft deleted.');
+    }, false, 'quiet');
+    section.appendChild(row);
+  });
+
+  recent.forEach(target => {
+    const row = document.createElement('div');
+    row.className = 'employee-target-row';
+    const submittedAt = target.submittedAt ? new Date(target.submittedAt).toLocaleString() : 'time unavailable';
+    row.innerHTML = `<div><div style="font-weight:650">Submitted: ${escapeHtml(target.targetName || 'Unknown target')}</div><div class="next-target-id">${target.targetId ? '[' + escapeHtml(target.targetId) + ']' : 'No ID'} · ${escapeHtml(submittedAt)}</div></div><span class="pill status-submitted">SUBMITTED</span>`;
+    section.appendChild(row);
+  });
+  parent.appendChild(section);
+}
+
 function renderEmployeeTargets(parent){
   const relevant = getEmployeeRelevantTargets();
   const claimed = relevant.filter(t => t.status === 'claimed' && isOwnedByCurrentEmployee(t));
@@ -1651,6 +1761,7 @@ function renderEmployeeTargets(parent){
   }
   if (!remaining) {
     wrap.innerHTML = `<div class="employee-hero"><div><h2 style="margin:0">No targets available</h2><div class="employee-count">Refresh later or ask the manager for more targets.</div></div></div>`;
+    renderEmployeeContinuity(wrap);
     parent.appendChild(wrap);
     return;
   }
@@ -1729,6 +1840,7 @@ function renderEmployeeTargets(parent){
   feedback.className = 'success-note';
   shell.appendChild(feedback);
   wrap.appendChild(shell);
+  renderEmployeeContinuity(wrap);
   parent.appendChild(wrap);
 }
 
@@ -1806,11 +1918,15 @@ function renderSubmitPanel(parent, t){
   const ta = document.createElement('textarea');
   ta.id = 'paste-' + t.id;
   ta.placeholder = 'Paste spy text here';
+  ta.value = state.pastes[String(t.id)] || '';
   parent.appendChild(ta);
   const preview = document.createElement('div');
   preview.id = 'spy-preview-' + t.id;
   parent.appendChild(preview);
-  ta.addEventListener('input', function(){ updateSpyPreview(t.id); });
+  ta.addEventListener('input', function(){
+    saveTaskDraft(t.id, ta.value || '', t);
+    updateSpyPreview(t.id);
+  });
   const row = document.createElement('div');
   row.className = 'row';
   row.style.marginTop = '8px';
@@ -1818,6 +1934,7 @@ function renderSubmitPanel(parent, t){
   addButton(row, isTaskActionBusy(t.id, 'logs') ? 'Searching reports...' : 'Find spy report', () => findSpyFromLogs(t.id, false), isTaskBusy(t.id), 'secondary');
   addButton(row, isTaskActionBusy(t.id, 'submit') ? 'Submitting...' : 'Submit found spy', () => findSpyFromLogs(t.id, true), isTaskBusy(t.id), 'secondary');
   addButton(row, isTaskActionBusy(t.id, 'submit') ? 'Submitting...' : 'Submit Result', () => submitSpy(t.id), isTaskBusy(t.id));
+  if (ta.value.trim()) updateSpyPreview(t.id);
 }
 
 function renderRecentlySubmitted(){
@@ -2238,6 +2355,7 @@ function renderWebhookDiagnostics(){
 // ===== Actions =====
 async function refresh(options){
   options = options || {};
+  let refreshed = false;
   saveSettings();
   if (!hasAccessCode()) {
     state.tasks = [];
@@ -2245,7 +2363,7 @@ async function refresh(options){
     render();
     enforceVisibility();
     setStatus('Sign in with Torn to load targets.');
-    return;
+    return false;
   }
   setStatus('');
   try{
@@ -2281,6 +2399,7 @@ async function refresh(options){
     state.lastUpdated = new Date().toISOString();
     render();
     restorePastes();
+    refreshed = true;
   }catch(e){
     state.adminVerified = false;
     state.accessVerified = false;
@@ -2291,6 +2410,7 @@ async function refresh(options){
   }
   updateSetupState();
   enforceVisibility();
+  return refreshed;
 }
 function editAccess(){
   clearTornEmployeeSession({ forgetKey:true });
@@ -2372,6 +2492,8 @@ async function submitSpy(id){
   const employeeName = currentEmployeeName();
   if(!employeeName){ alert('Sign in with Torn first.'); return; }
   let raw = '';
+  let submissionConfirmed = false;
+  let submittedTask = null;
   try{
     const ta = document.getElementById('paste-'+id);
     raw = ta ? (ta.value || '') : '';
@@ -2397,6 +2519,7 @@ async function submitSpy(id){
 
     // Fallback fra selve tasken
     const task = state.tasks.find(t => String(t.id)===String(id)) || {};
+    submittedTask = task;
     if(!p.name && task.targetName) p.name = task.targetName;
     if(!p.id   && task.targetId)   p.id   = task.targetId;
     const corrected = readCorrectedSpy(id, parseSpyResult(raw));
@@ -2447,9 +2570,14 @@ async function submitSpy(id){
       name: payload.name, targetId: payload.targetId, payload,
       requestId: submissionRequest.requestId
     });
+    submissionConfirmed = true;
     sessionStorage.removeItem(submissionRequest.key);
 
     ta.value='';
+    clearTaskDraft(id);
+    task.status = 'submitted';
+    task.submittedAt = new Date().toISOString();
+    task.reviewStatus = 'pending_review';
     state.reviews[taskKey(task)] = {
       status: 'pending_review',
       rawText: raw,
@@ -2462,10 +2590,22 @@ async function submitSpy(id){
     if (submitWarnings.length || missing.length) addAuditLog('submission_warning', payload.targetId, submitWarnings.concat(missing.length ? ['Missing: ' + missing.join(', ')] : []).join(' | '));
     addAuditLog('spy_submitted', payload.targetId, payload.name);
     setTaskBusy(id, false);
-    await refresh();
-    setStatus('Result submitted.');
+    render();
+    const refreshSucceeded = await refresh();
+    setStatus(refreshSucceeded ? 'Result submitted.' : 'Result submitted, but the latest queue could not be refreshed. Your submission is saved and the target has been removed from your active claims.');
   }catch(e){
     setTaskBusy(id, false);
+    if (submissionConfirmed) {
+      clearTaskDraft(id);
+      if (submittedTask) {
+        submittedTask.status = 'submitted';
+        submittedTask.submittedAt = submittedTask.submittedAt || new Date().toISOString();
+        submittedTask.reviewStatus = 'pending_review';
+      }
+      render();
+      setStatus('Result submitted, but the page could not finish updating. Your submission is saved and the target has been removed from your active claims.');
+      return;
+    }
     render();
     restoreTaskPaste(id, raw);
     updateSpyPreview(id);
