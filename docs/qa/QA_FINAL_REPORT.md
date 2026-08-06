@@ -20,7 +20,7 @@ legacy-versjon som versjon 1.
 
 Frontend/backend-versjonsmarkørene var også ulike og er samkjørt. Etter den
 ikke-deployede kanselleringsfunksjonen 2026-08-04 er gjeldende kandidat
-`2026-08-06-mobile-submit-v1`.
+`2026-08-06-torn-session-v1`.
 
 Den komplette lokale pakken passerer nå **51/51 tester**. De fem eksterne
 runtime-gatene er likevel ikke PASS: det finnes ingen staging Apps
@@ -64,7 +64,7 @@ Ingen gate er merket PASS uten den faktiske runtime-evidensen fase 5 krever.
 - **Rotårsak:** frontend annonserte `2026-06-13-automation-v1`, backend
   `2026-07-23-phase4-v1`.
 - **Lokal fix:** begge annonserer samme kandidat, nå
-  `2026-08-06-mobile-submit-v1`, med regresjonstest.
+  `2026-08-06-torn-session-v1`, med regresjonstest.
 - **Nåstatus:** FIXED — STATIC VERIFIED ONLY. Må bekreftes via staging `version`.
 
 ## Lokal regression
@@ -140,9 +140,9 @@ employee-, manager- og Outbox-test.
 
 1. Frys mutasjoner og Outbox-operatørretry.
 2. Eksporter/backup alle relevante Sheets og registrer radantall/headerhash.
-3. Verifiser properties og secretscan; valider `EMPLOYEE_ACCESS_MAP` som JSON.
+3. Verifiser properties og secretscan; valider `TORN_COMPANY_ID` og Torn-innlogging.
 4. Kjør `ensureSheets_()` og før/etter-diff; kjør den på nytt for idempotens.
-5. Deploy immutable Apps Script-versjon `2026-08-06-mobile-submit-v1`.
+5. Deploy immutable Apps Script-versjon `2026-08-06-torn-session-v1`.
 6. Deploy frontend med samme versjon i det avtalte vedlikeholdsvinduet.
 7. Kjør credential-fri og maskert immediate smoke/network-test.
 8. Kjør autentisert employee-test med avgrenset fixture.
@@ -180,9 +180,9 @@ Handling:
 
 På staging først, deretter produksjon etter godkjente gates:
 
-- `API_KEY`: separat sterk stagingkode; brukes også som legacy/read access.
+- `TORN_COMPANY_ID`: numerisk company-ID for stagingmiljøet.
 - `ADMIN_KEY`: separat sterk staging manager-key.
-- `EMPLOYEE_ACCESS_MAP`: gyldig JSON-object med minst to unike koder og
+- `SESSION_SECRET`: autogenerert eller eksplisitt lang tilfeldig verdi; legacy `EMPLOYEE_ACCESS_MAP` kan fortsatt brukes med minst to unike koder og
   canonical navn, eksempel
   `{"<unik-kode-a>":"QA Employee A","<unik-kode-b>":"QA Employee B"}`.
 - `ADMIN_ACTOR`: canonical managernavn, eksempel `QA Manager`.

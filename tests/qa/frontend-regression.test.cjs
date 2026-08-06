@@ -82,10 +82,28 @@ test('mobile setup controls do not overlay the spy submission form', () => {
   assert.match(mobileCss, /backdrop-filter:\s*none/);
 });
 
-test('shared read-only access explains how to enable employee actions', () => {
+test('shared read-only access directs employees to Torn sign-in or legacy access', () => {
   assert.match(html, /Individual employee access is required/);
-  assert.match(html, /This access code is read-only/);
-  assert.match(html, /EMPLOYEE_ACCESS_MAP/);
+  assert.match(html, /This access is read-only/);
+  assert.match(html, /Sign in with your Torn API key/);
   assert.match(html, /Claim failed: '\+friendlyErrorMessage\(e\)/);
   assert.match(html, /Submit failed: ' \+ friendlyErrorMessage\(e\)/);
+});
+
+test('Torn employee sign-in stores only a temporary session outside localStorage', () => {
+  assert.match(html, /action:'authenticateTorn', tornApiKey/);
+  assert.match(html, /sessionStorage\.setItem\(TORN_EMPLOYEE_SESSION_TOKEN/);
+  assert.match(html, /sessionStorage\.setItem\(TORN_EMPLOYEE_API_KEY/);
+  assert.doesNotMatch(html, /localStorage\.setItem\([^\n]*TORN_EMPLOYEE_API_KEY/);
+  assert.match(html, /payload\.sessionToken = state\.sessionToken/);
+  assert.match(html, /function isOwnedByCurrentEmployee/);
+  assert.match(html, /claimedByTornId/);
+});
+
+test('direct Torn report requests use the Authorization header, not URL credentials', () => {
+  const start = html.indexOf('async function fetchTornEndpoint');
+  const end = html.indexOf('async function verifyTornKey', start);
+  const source = html.slice(start, end);
+  assert.match(source, /Authorization:'ApiKey ' \+ key/);
+  assert.doesNotMatch(source, /searchParams\.set\('key'/);
 });

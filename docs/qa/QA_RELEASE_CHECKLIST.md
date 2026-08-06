@@ -1,7 +1,7 @@
 # Torn Spy Coordinator — release checklist
 
 Dato: __________  
-Release: `2026-08-06-mobile-submit-v1`
+Release: `2026-08-06-torn-session-v1`
 Operatør: __________  
 Godkjenner: __________
 
@@ -39,7 +39,7 @@ Ikke skriv faktiske access codes, admin keys eller webhooktokens i sjekklisten.
 | BLOCKED | To employee-testkoder er konfigurert | Ikke satt |
 | BLOCKED | Separat admin testkey og `ADMIN_ACTOR` er konfigurert | Ikke satt |
 | BLOCKED | Kun testwebhooks er konfigurert | Ingen testwebhooks tilgjengelige |
-| PASS | Frontend/backend kildeversjon er lik | `2026-08-06-mobile-submit-v1`; lokal test |
+| PASS | Frontend/backend kildeversjon er lik | `2026-08-06-torn-session-v1`; lokal test |
 | PASS | Lokal regression er grønn | 51/51 |
 
 ## Gate 1 — Apps Script transport og auth
@@ -146,7 +146,7 @@ Godkjent av/evidens: ________________________________________________
 | BLOCKED | Live status annonseres korrekt | Lokal ARIA contract PASS; assistive runtime mangler |
 | BLOCKED | Ingen uncaught errors eller uhåndterte requestfeil | __________ |
 | BLOCKED | Ingen secrets i URL, responses eller logging | __________ |
-| BLOCKED | Frontend/backend viser `2026-08-06-mobile-submit-v1` | Lokal parity PASS; runtime mangler |
+| BLOCKED | Frontend/backend viser `2026-08-06-torn-session-v1` | Lokal parity PASS; runtime mangler |
 
 Gate 5 samlet status: **BLOCKED**  
 Godkjent av/evidens: ________________________________________________
@@ -176,7 +176,7 @@ Ikke start før Gate 1–5 alle er PASS.
 | BLOCKED | 2. Backup/export alle relevante Sheets | __________ |
 | BLOCKED | 3. Snapshot headers, radantall, IDs og Outbox | __________ |
 | BLOCKED | 4. Sett og dobbeltkontroller properties | __________ |
-| BLOCKED | 5. Valider `EMPLOYEE_ACCESS_MAP` JSON, unike koder/navn | __________ |
+| BLOCKED | 5. Valider `TORN_COMPANY_ID`; test Torn-innlogging med to ansatte | __________ |
 | BLOCKED | 6. Kjør schema ensure + diff + ensure på nytt | __________ |
 | BLOCKED | 7. Deploy backend immutable version | __________ |
 | BLOCKED | 8. Deploy frontend umiddelbart i vedlikeholdsvindu | __________ |
@@ -190,9 +190,9 @@ Ikke start før Gate 1–5 alle er PASS.
 
 | Status | Property | Verifisering |
 |---|---|---|
-| BLOCKED | `API_KEY` | Sterk, korrekt miljø, ikke dokumentert/logget |
+| BLOCKED | `TORN_COMPANY_ID` | Numerisk ID for riktig Torn-company |
 | BLOCKED | `ADMIN_KEY` | Sterk, ulik employee-koder |
-| BLOCKED | `EMPLOYEE_ACCESS_MAP` | JSON object; minst to unike kode→canonical-navn |
+| BLOCKED | `SESSION_SECRET` | Autogenerert eller eksplisitt lang tilfeldig verdi; aldri eksponert |
 | BLOCKED | `ADMIN_ACTOR` | Canonical manageridentitet |
 | BLOCKED | `MANAGER_DISCORD_WEBHOOK_URL` | Riktig kanal og miljø |
 | BLOCKED | `EMPLOYEE_DISCORD_WEBHOOK_URL` | Riktig kanal og miljø |

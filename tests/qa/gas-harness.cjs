@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const crypto = require('node:crypto');
 
 class FakeRange {
   constructor(sheet, row, column, numRows = 1, numColumns = 1) {
@@ -150,6 +151,8 @@ function createHarness(options = {}) {
         'employee-key': 'Employee A',
         'employee-b-key': 'Employee B',
       }),
+      TORN_COMPANY_ID: '12345',
+      SESSION_SECRET: 'qa-session-secret-with-sufficient-entropy',
       ...(options.properties || {}),
     })),
     emit(event) {
@@ -226,12 +229,26 @@ function createHarness(options = {}) {
       },
     },
     Utilities: {
+      Charset: { UTF_8: 'UTF-8' },
       getUuid() {
         env.uuid += 1;
         return env.uuid.toString(16).padStart(8, '0') + '-0000-0000-0000-000000000000';
       },
       sleep(ms) {
         env.sleeps.push(ms);
+      },
+      base64EncodeWebSafe(value) {
+        return Buffer.from(value).toString('base64url');
+      },
+      base64DecodeWebSafe(value) {
+        return [...Buffer.from(String(value), 'base64url')];
+      },
+      computeHmacSha256Signature(value, key) {
+        return [...crypto.createHmac('sha256', String(key)).update(String(value), 'utf8').digest()];
+      },
+      newBlob(value) {
+        const bytes = Buffer.from(value);
+        return { getDataAsString: () => bytes.toString('utf8') };
       },
     },
     UrlFetchApp: {

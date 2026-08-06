@@ -26,10 +26,68 @@ test('frontend transports credentials only in POST body', () => {
   const source = html.slice(callStart, callEnd);
 
   assert.match(source, /method:\s*'POST'/);
+  assert.match(source, /payload\.sessionToken\s*=\s*state\.sessionToken/);
   assert.match(source, /payload\.key\s*=\s*state\.key/);
   assert.doesNotMatch(source, /key=.*encodeURIComponent/);
   assert.doesNotMatch(source, /admin=.*encodeURIComponent/);
   assert.doesNotMatch(source, /jsonpCall|payload=.*encodeURIComponent/);
+});
+
+test('Torn sign-in verifies identity and company membership without persisting the raw key', () => {
+  const rawKey = 'torn-secret-key';
+  const h = createHarness({
+    urlFetchResponse(url, request) {
+      assert.equal(request.headers.Authorization, 'ApiKey ' + rawKey);
+      assert.doesNotMatch(url, /torn-secret-key|[?&]key=/);
+      if (url.endsWith('/user/basic')) {
+        return { code:200, body:JSON.stringify({ profile:{ id:9001, name:'Kattemannen' } }) };
+      }
+      if (url.endsWith('/company/12345/employees')) {
+        return { code:200, body:JSON.stringify({ employees:[{ id:9001, name:'Kattemannen' }] }) };
+      }
+      throw new Error('Unexpected URL: ' + url);
+    },
+  });
+
+  const signedIn = h.request({ action:'authenticateTorn', tornApiKey:rawKey });
+  assert.equal(signedIn.ok, true);
+  assert.equal(signedIn.identity.name, 'Kattemannen');
+  assert.equal(signedIn.identity.tornId, '9001');
+  assert.ok(signedIn.sessionToken);
+  assert.equal([...h.env.properties.values()].some(value => String(value).includes(rawKey)), false);
+
+  h.append('Targets', target({ id:'target-torn', status:'open', claimedBy:'' }));
+  const claimed = h.request({ action:'claim', sessionToken:signedIn.sessionToken, id:'target-torn', requestId:'claim-torn' });
+  assert.equal(claimed.ok, true);
+  assert.equal(h.rows('Targets')[0].claimedBy, 'Kattemannen');
+  assert.equal(String(h.rows('Targets')[0].claimedByTornId), '9001');
+});
+
+test('tampered Torn sessions and non-company Torn users are rejected', () => {
+  const h = createHarness({
+    urlFetchResponse(url) {
+      if (url.endsWith('/user/basic')) return { code:200, body:JSON.stringify({ profile:{ id:9002, name:'Outsider' } }) };
+      return { code:200, body:JSON.stringify({ employees:[{ id:9001, name:'Kattemannen' }] }) };
+    },
+  });
+  const denied = h.request({ action:'authenticateTorn', tornApiKey:'outsider-key' });
+  assert.equal(denied.ok, false);
+  assert.match(denied.error, /not a current employee/);
+
+  const valid = h.context.issueSessionToken_({ v:1, sub:'9001', name:'Kattemannen', companyId:'12345', exp:Date.now() + 60000 });
+  const tampered = valid.slice(0, -1) + (valid.endsWith('A') ? 'B' : 'A');
+  const response = h.request({ action:'list', sessionToken:tampered });
+  assert.equal(response.ok, false);
+  assert.match(response.error, /Invalid employee session/);
+});
+
+test('Torn ID, not a matching display name, controls target ownership', () => {
+  const h = createHarness();
+  h.append('Targets', target({ claimedBy:'Same Name', claimedByTornId:'9001' }));
+  const otherEmployeeToken = h.context.issueSessionToken_({ v:1, sub:'9002', name:'Same Name', companyId:'12345', exp:Date.now() + 60000 });
+  const denied = h.request({ action:'unclaim', sessionToken:otherEmployeeToken, id:'target-1', requestId:'unclaim-other-id' });
+  assert.equal(denied.ok, false);
+  assert.match(denied.error, /Forbidden/);
 });
 
 test('backend rejects credentials supplied in URL query', () => {

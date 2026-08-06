@@ -11,7 +11,9 @@ function _employeeAccessMap_(){
     throw new Error('EMPLOYEE_ACCESS_MAP is not valid JSON.');
   }
 }
-const BACKEND_VERSION = '2026-08-06-mobile-submit-v1';
+const BACKEND_VERSION = '2026-08-06-torn-session-v1';
+const TORN_API_V2_BASE = 'https://api.torn.com/v2';
+const DEFAULT_TORN_SESSION_HOURS = 8;
 const MANAGER_WEBHOOK_KEYS = ['MANAGER_DISCORD_WEBHOOK_URL','DISCORD_MANAGER_WEBHOOK_URL','MANAGER_WEBHOOK_URL','DISCORD_WEBHOOK_URL'];
 const EMPLOYEE_WEBHOOK_KEYS = ['EMPLOYEE_DISCORD_WEBHOOK_URL','DISCORD_EMPLOYEE_WEBHOOK_URL','EMPLOYEE_WEBHOOK_URL','DISCORD_WEBHOOK_URL'];
 const CUSTOMER_WEBHOOK_PREFIX = 'CUSTOMER_DISCORD_WEBHOOK_URL_';
@@ -34,8 +36,8 @@ const SHEETS = {
 };
 
 const HEADERS = {
-  Targets: ['id','targetName','targetId','level','notes','priority','status','claimedBy','claimedAt','submittedAt','reviewStatus','assignedTo','assignedAt','orderId','customer','pricePerSpy','employeeRate','customerPaymentStatus','employeePayoutStatus','createdAt','updatedAt','version','lastOperationId'],
-  Submissions: ['id','targetRowId','targetName','targetId','submittedBy','submittedAt','rawText','level','strength','speed','dexterity','defense','total','formatted','reviewStatus','reviewedBy','reviewedAt','warnings','updatedAt','requestId','version','reviewOperationId'],
+  Targets: ['id','targetName','targetId','level','notes','priority','status','claimedBy','claimedByTornId','claimedAt','submittedAt','reviewStatus','assignedTo','assignedAt','orderId','customer','pricePerSpy','employeeRate','customerPaymentStatus','employeePayoutStatus','createdAt','updatedAt','version','lastOperationId'],
+  Submissions: ['id','targetRowId','targetName','targetId','submittedBy','submittedByTornId','submittedAt','rawText','level','strength','speed','dexterity','defense','total','formatted','reviewStatus','reviewedBy','reviewedAt','warnings','updatedAt','requestId','version','reviewOperationId'],
   Orders: ['orderId','customer','requestedBy','orderedAt','targetCount','pricePerSpy','totalPrice','paymentStatus','employeePayoutStatus','newOrderNotifiedAt','newOrderNotificationStatus','completedAt','completionNotifiedAt','completionNotificationStatus','orderStatus','paymentRequired','paymentConfirmedAt','paymentConfirmedBy','paymentType','deliveryMode','autoDeliver','customerDeliveryConfigured','deliveredAt','deliveryStatus','deliveryError','notes','createdAt','updatedAt','cancelledAt','cancelledBy','cancelReason','cancelOperationId'],
   Customers: ['customer','contact','notes','createdAt','updatedAt'],
   Employees: ['displayName','payoutHandle','defaultRate','notes','createdAt','updatedAt'],
@@ -59,8 +61,12 @@ function handleRequest(e, method) {
   try {
     ensureSheets_();
     input = getInput_(e, method);
-    validateAccess_(input, method);
     const action = input.action || (e.parameter && e.parameter.action) || 'list';
+    if (action === 'authenticateTorn') {
+      if (method !== 'POST') throw new Error('Torn authentication requires POST.');
+    } else {
+      validateAccess_(input, method);
+    }
     const result = dispatch_(action, input);
     return json_(result, input);
   } catch (err) {
@@ -69,6 +75,7 @@ function handleRequest(e, method) {
 }
 
 function dispatch_(action, input) {
+  if (action === 'authenticateTorn') return authenticateTorn_(input);
   if (action === 'version') return version_();
   if (action === 'list') return list_(input);
   if (action === 'add') return addTarget_(input);
@@ -106,7 +113,7 @@ function version_() {
     ok: true,
     version: BACKEND_VERSION,
     checkedAt: now_(),
-    actions: ['version','list','customerPayment','voidCustomerPayment','employeePayout','voidEmployeePayout','setOrderPrice','webhookDebug','testDiscordWebhook','sendNewOrderNotification','sendOrderCompleteNotification','setOrderAutomation','recordTornMoneyPayment','sendCustomerDelivery','markOrderDelivered','cancelOrder','getAutomationDiagnostics','reconcileOutbox','retryOutboxEvent']
+    actions: ['authenticateTorn','version','list','customerPayment','voidCustomerPayment','employeePayout','voidEmployeePayout','setOrderPrice','webhookDebug','testDiscordWebhook','sendNewOrderNotification','sendOrderCompleteNotification','setOrderAutomation','recordTornMoneyPayment','sendCustomerDelivery','markOrderDelivered','cancelOrder','getAutomationDiagnostics','reconcileOutbox','retryOutboxEvent']
   };
 }
 
@@ -141,6 +148,7 @@ function list_(input) {
     priority: row.priority || 'normal',
     status: row.status || 'open',
     claimedBy: row.claimedBy,
+    claimedByTornId: row.claimedByTornId,
     claimedAt: row.claimedAt,
     submittedAt: row.submittedAt,
     reviewStatus: row.reviewStatus || 'pending_review',
@@ -161,6 +169,7 @@ function list_(input) {
   });
   return {
     ok: true,
+    identity: input._actor ? { name:String(input._actor), tornId:String(input._tornId || ''), mode:input._authMode || 'employee_code' } : null,
     tasks: targets,
     orders: adminOk ? orders.map(sanitizeOrderForClient_) : [],
     customerPayments: adminOk ? readObjects_(SHEETS.customerPayments) : [],
@@ -346,7 +355,7 @@ function claimTarget_(input) {
   return withScriptLock_(() => {
     const current = getTargetById_(input.id);
     if (String(current.lastOperationId || '') === requestId &&
-        String(current.status || '') === 'claimed' && String(current.claimedBy || '') === actor) {
+        String(current.status || '') === 'claimed' && actorOwnsTarget_(current, input, actor)) {
       ensureAuditOnce_(requestId, actor, 'target_claimed', current.targetId, current.targetName);
       return { ok:true, duplicate:true, claimedBy:actor, version:num_(current.version) || 1 };
     }
@@ -354,6 +363,7 @@ function claimTarget_(input) {
       if (String(row.status || 'open') !== 'open') throw new Error('Conflict: target is already claimed or submitted.');
       row.status = 'claimed';
       row.claimedBy = actor;
+      row.claimedByTornId = input._tornId || '';
       row.claimedAt = now_();
       row.assignedTo = '';
       row.assignedAt = '';
@@ -381,11 +391,12 @@ function unclaimTarget_(input) {
     }
     const updated = updateTarget_(input.id, row => {
       if (String(row.status || '') !== 'claimed') throw new Error('Conflict: target is not currently claimed.');
-      if (!managerOverride && String(row.claimedBy || '') !== actor) {
+      if (!managerOverride && !actorOwnsTarget_(row, input, actor)) {
         throw new Error('Forbidden: target is claimed by another employee.');
       }
       row.status = 'open';
       row.claimedBy = '';
+      row.claimedByTornId = '';
       row.claimedAt = '';
       row.updatedAt = now_();
       row.lastOperationId = requestId;
@@ -407,7 +418,7 @@ function submitSpy_(input) {
     const existing = readObjects_(SHEETS.submissions).find(row => String(row.requestId || '') === requestId);
     if (existing) {
       if (String(existing.targetRowId || '') !== String(input.id || '') ||
-          String(existing.submittedBy || '') !== actor ||
+          !sameActorName_(existing.submittedBy, actor) ||
           !submissionMatchesInput_(existing, input, payload)) {
         throw new Error('Conflict: requestId was already used for another submission.');
       }
@@ -426,7 +437,7 @@ function submitSpy_(input) {
     const now = now_();
     const target = getTargetById_(input.id);
     if (String(target.status || '') !== 'claimed') throw new Error('Conflict: target is not currently claimed.');
-    if (String(target.claimedBy || '') !== actor) throw new Error('Forbidden: target is claimed by another employee.');
+    if (!actorOwnsTarget_(target, input, actor)) throw new Error('Forbidden: target is claimed by another employee.');
     const submissionId = uid_('sub');
     appendObject_(SHEETS.submissions, {
       id: submissionId,
@@ -434,6 +445,7 @@ function submitSpy_(input) {
       targetName: input.name || target.targetName || payload.name || '',
       targetId: input.targetId || target.targetId || payload.targetId || '',
       submittedBy: actor,
+      submittedByTornId: input._tornId || '',
       submittedAt: now,
       rawText: payload.rawText || input.rawText || '',
       level: payload.level || '',
@@ -1332,6 +1344,7 @@ function cancelOrder_(input) {
       writeObjectAtRow_(targetSheet, target._row, {
         status:'cancelled',
         claimedBy:'',
+        claimedByTornId:'',
         claimedAt:'',
         assignedTo:'',
         assignedAt:'',
@@ -1949,26 +1962,132 @@ function getInput_(e, method) {
   }
   if (e.parameter && e.parameter.payload) throw new Error('Query payloads are not supported.');
   Object.keys(e.parameter || {}).forEach(k => {
-    if (k !== 'payload' && k !== 'key' && k !== 'admin') input[k] = e.parameter[k];
+    if (k !== 'payload' && k !== 'key' && k !== 'admin' && k !== 'sessionToken' && k !== 'tornApiKey') input[k] = e.parameter[k];
   });
-  if ((e.parameter || {}).key || (e.parameter || {}).admin) {
+  if ((e.parameter || {}).key || (e.parameter || {}).admin || (e.parameter || {}).sessionToken || (e.parameter || {}).tornApiKey) {
     throw new Error('Credentials must be sent in the POST body.');
   }
   return input;
 }
 
+function authenticateTorn_(input) {
+  const tornApiKey = String(input.tornApiKey || '').trim();
+  if (!tornApiKey) throw new Error('Torn API key is required.');
+  const companyId = String(_props().getProperty('TORN_COMPANY_ID') || '').trim();
+  if (!/^\d+$/.test(companyId)) throw new Error('TORN_COMPANY_ID is not configured server-side.');
+
+  const profileResponse = tornApiGet_('/user/basic', tornApiKey);
+  const profile = profileResponse && profileResponse.profile || profileResponse || {};
+  const tornId = String(profile.id || profile.player_id || '').trim();
+  const name = String(profile.name || '').trim();
+  if (!/^\d+$/.test(tornId) || !name) throw new Error('Torn did not return a valid player identity.');
+
+  const employeesResponse = tornApiGet_('/company/' + encodeURIComponent(companyId) + '/employees', tornApiKey);
+  const employees = Array.isArray(employeesResponse && employeesResponse.employees) ? employeesResponse.employees : [];
+  const membership = employees.find(employee => String(employee && (employee.id || employee.player_id) || '') === tornId);
+  if (!membership) throw new Error('This Torn account is not a current employee of the configured company.');
+
+  const canonicalName = String(membership.name || name).trim() || name;
+  const issuedAt = Date.now();
+  const configuredHours = Number(_props().getProperty('TORN_SESSION_HOURS') || DEFAULT_TORN_SESSION_HOURS);
+  const sessionHours = Math.max(1, Math.min(24, Number.isFinite(configuredHours) ? configuredHours : DEFAULT_TORN_SESSION_HOURS));
+  const expiresAt = issuedAt + sessionHours * 60 * 60 * 1000;
+  const token = issueSessionToken_({ v:1, sub:tornId, name:canonicalName, companyId:companyId, iat:issuedAt, exp:expiresAt, jti:uid_('session') });
+  return { ok:true, sessionToken:token, identity:{ tornId:tornId, name:canonicalName, mode:'torn' }, expiresAt:new Date(expiresAt).toISOString() };
+}
+
+function tornApiGet_(path, tornApiKey) {
+  const response = UrlFetchApp.fetch(TORN_API_V2_BASE + path, {
+    method:'get',
+    headers:{ Authorization:'ApiKey ' + tornApiKey },
+    muteHttpExceptions:true,
+  });
+  const code = Number(response.getResponseCode());
+  let data = {};
+  try { data = JSON.parse(response.getContentText() || '{}'); } catch (_) {}
+  if (code < 200 || code >= 300 || (data && data.error)) {
+    const apiError = data && data.error;
+    const message = apiError && (apiError.error || apiError.message) || 'HTTP ' + code;
+    throw new Error('Torn API authentication failed: ' + message);
+  }
+  return data;
+}
+
+function sessionSecret_() {
+  const props = _props();
+  const current = props.getProperty('SESSION_SECRET');
+  if (current) return current;
+  return withScriptLock_(() => {
+    const existing = props.getProperty('SESSION_SECRET');
+    if (existing) return existing;
+    const generated = Utilities.getUuid() + Utilities.getUuid() + Utilities.getUuid();
+    props.setProperty('SESSION_SECRET', generated);
+    return generated;
+  });
+}
+
+function base64UrlEncode_(value) {
+  return String(Utilities.base64EncodeWebSafe(String(value), Utilities.Charset.UTF_8)).replace(/=+$/g, '');
+}
+
+function base64UrlDecodeText_(value) {
+  return Utilities.newBlob(Utilities.base64DecodeWebSafe(String(value))).getDataAsString('UTF-8');
+}
+
+function sessionSignature_(payloadPart) {
+  const bytes = Utilities.computeHmacSha256Signature(String(payloadPart), sessionSecret_(), Utilities.Charset.UTF_8);
+  return String(Utilities.base64EncodeWebSafe(bytes)).replace(/=+$/g, '');
+}
+
+function secureTextEquals_(left, right) {
+  const a = String(left || '');
+  const b = String(right || '');
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i += 1) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return mismatch === 0;
+}
+
+function issueSessionToken_(claims) {
+  const payloadPart = base64UrlEncode_(JSON.stringify(claims));
+  return payloadPart + '.' + sessionSignature_(payloadPart);
+}
+
+function verifySessionToken_(token) {
+  const parts = String(token || '').split('.');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) throw new Error('Invalid employee session. Sign in with Torn again.');
+  if (!secureTextEquals_(parts[1], sessionSignature_(parts[0]))) throw new Error('Invalid employee session. Sign in with Torn again.');
+  let claims;
+  try { claims = JSON.parse(base64UrlDecodeText_(parts[0])); } catch (_) { throw new Error('Invalid employee session. Sign in with Torn again.'); }
+  if (!claims || claims.v !== 1 || !claims.sub || !claims.name || Number(claims.exp || 0) <= Date.now()) {
+    throw new Error('Employee session expired. Sign in with Torn again.');
+  }
+  const companyId = String(_props().getProperty('TORN_COMPANY_ID') || '').trim();
+  if (!companyId || String(claims.companyId || '') !== companyId) throw new Error('Employee session is no longer valid for this company.');
+  return claims;
+}
+
 function validateAccess_(input, method) {
   if (method !== 'POST') throw new Error('Authenticated requests require POST.');
+  if (input.sessionToken) {
+    const claims = verifySessionToken_(input.sessionToken);
+    input._actor = String(claims.name);
+    input._tornId = String(claims.sub);
+    input._authMode = 'torn';
+    return;
+  }
   const key = String(input.key || '');
   const accessMap = _employeeAccessMap_();
   if (Object.prototype.hasOwnProperty.call(accessMap, key)) {
     input._actor = String(accessMap[key] || '').trim();
     if (!input._actor) throw new Error('Employee identity is not configured for this access code.');
+    input._authMode = 'employee_code';
     return;
   }
   const expected = _apiKey();
   if (expected && key === expected) {
     input._legacyAccess = true;
+    input._authMode = 'legacy';
     return;
   }
   throw new Error('Invalid access code.');
@@ -1994,6 +2113,17 @@ function canonicalActor_(input, options) {
     return String(input.employee || '').trim();
   }
   throw new Error('Individual employee access is required for this action.');
+}
+
+function sameActorName_(left, right) {
+  return String(left || '').trim().toLowerCase() === String(right || '').trim().toLowerCase();
+}
+
+function actorOwnsTarget_(target, input, actor) {
+  const targetTornId = String(target && target.claimedByTornId || '').trim();
+  const actorTornId = String(input && input._tornId || '').trim();
+  if (targetTornId || actorTornId) return !!targetTornId && !!actorTornId && targetTornId === actorTornId;
+  return sameActorName_(target && target.claimedBy, actor);
 }
 
 function json_(obj, input) {

@@ -67,8 +67,8 @@ test('schema ensure is additive and idempotent for representative legacy rows', 
   h.context.ensureSheets_();
 
   for (const [name, added] of Object.entries({
-    Targets: ['version', 'lastOperationId'],
-    Submissions: ['requestId', 'version', 'reviewOperationId'],
+    Targets: ['claimedByTornId', 'version', 'lastOperationId'],
+    Submissions: ['submittedByTornId', 'requestId', 'version', 'reviewOperationId'],
     AuditLog: ['operationId'],
   })) {
     const sheet = h.spreadsheet.getSheetByName(name);

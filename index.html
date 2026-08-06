@@ -350,38 +350,47 @@ body:not(.is-admin) .manager-only { display:none !important; }
       <div class="setup-copy">
         <div class="eyebrow">Setup</div>
         <strong>Ready for the next spy?</strong>
-        <span>Enter your display name and access code once. After that, this stays compact so the work queue is first.</span>
+        <span>Sign in once with your Torn API key. Your verified Torn identity owns every claim and submission.</span>
       </div>
       <div class="setup-saved">
         <span>Signed in as <strong id="setup-saved-name">employee</strong></span>
         <span class="pill status-approved">Access verified</span>
         <button id="refresh" class="secondary">Refresh</button>
-        <button id="edit-access" type="button" class="secondary">Edit access</button>
+        <button id="edit-access" type="button" class="secondary">Sign out</button>
         <button id="theme-toggle-compact" type="button" class="secondary">Theme</button>
       </div>
+      <div class="api-privacy setup-primary">
+        The key is sent once to Apps Script to verify your Torn ID and company membership, then exchanged for a temporary session. It is not stored in Sheets, Script Properties, or server logs. In this browser session it can also be used directly with Torn for report lookup.
+      </div>
       <div class="bar setup-actions setup-primary">
-        <label class="sr-only" for="me">Display name</label>
-        <input id="me" placeholder="Your display name" aria-label="Display name" autocomplete="nickname" style="width:220px">
-        <label class="sr-only" for="api-key">Access code</label>
-        <input id="api-key" placeholder="Access code" aria-label="Access code" autocomplete="off" style="width:220px">
-        <button id="save">Save & refresh</button>
+        <label class="sr-only" for="torn-api-key">Torn API key</label>
+        <input id="torn-api-key" placeholder="Torn API key" aria-label="Torn API key" autocomplete="off" style="width:280px">
+        <button id="torn-login-btn">Sign in with Torn</button>
         <button id="theme-toggle" type="button" class="secondary">Theme</button>
       </div>
+      <details class="manager-login manager-entry setup-primary">
+        <summary>Legacy employee code</summary>
+        <div class="bar">
+          <label class="sr-only" for="me">Display name</label>
+          <input id="me" placeholder="Your display name" aria-label="Display name" autocomplete="nickname" style="width:220px">
+          <label class="sr-only" for="api-key">Employee access code</label>
+          <input id="api-key" placeholder="Employee access code" aria-label="Employee access code" autocomplete="off" style="width:220px">
+          <button id="save">Use legacy code</button>
+        </div>
+      </details>
       <div id="err" class="status-line muted" role="status" aria-live="polite" aria-atomic="true"></div>
       <details class="manager-login manager-entry">
-        <summary>Optional Torn API key</summary>
+        <summary>Torn report settings</summary>
         <div class="grid" style="margin-top:8px">
           <div class="api-privacy">
-            Use a Custom Torn API key with <strong>user → reports</strong> and <strong>user → profile</strong>. Reports provide stats; profile is only used to fill missing level. The key stays in this browser session and is not saved to Google Sheets or Apps Script.
+            Report lookup requires a Custom Torn API key with <strong>user → reports</strong> and <strong>user → profile</strong>. The key stays in this browser session and is sent directly to Torn for these lookups.
           </div>
           <div class="bar">
             <button id="create-torn-log-key" type="button" class="secondary">Create Torn log key</button>
-            <label class="sr-only" for="torn-api-key">Torn API key</label>
-            <input id="torn-api-key" placeholder="Torn API key" aria-label="Torn API key" autocomplete="off" style="width:260px">
             <label class="sr-only" for="torn-log-hours">Hours to search</label>
             <input id="torn-log-hours" type="number" min="1" max="72" step="1" value="24" aria-label="Hours to search" style="width:120px">
             <button id="verify-torn-key" type="button" class="secondary">Verify key</button>
-            <button id="forget-torn-key" type="button" class="secondary">Forget key</button>
+            <button id="forget-torn-key" type="button" class="secondary">Forget report key</button>
           </div>
           <div id="torn-api-status" class="api-status muted">Optional. Required access: Custom key with user → reports and user → profile. Do not use Full Access.</div>
         </div>
@@ -708,7 +717,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
 
 <script>
 const DEFAULT_API = "https://script.google.com/macros/s/AKfycbwmvn4x0wmHDllT-IYWINU1OI-DG9Hdk_sEhZUQKmsqJA16y9yOOnAHjJ6NGIqI9WTQ/exec";
-const APP_FRONTEND_VERSION = "2026-08-06-mobile-submit-v1";
+const APP_FRONTEND_VERSION = "2026-08-06-torn-session-v1";
 const DEFAULT_KEY = "";
 const STALE_WARNING_MINUTES = 30;
 const STALE_DANGER_MINUTES = 60;
@@ -719,6 +728,8 @@ const HISTORY_KEY = "torn_spy_delivery_history";
 const JOB_SPECIAL_URL = "https://www.torn.com/companies.php?step=your&type=1";
 const THEME_KEY = "torn_theme";
 const TORN_EMPLOYEE_API_KEY = "torn_employee_api_key_session";
+const TORN_EMPLOYEE_SESSION_TOKEN = "torn_employee_session_token";
+const TORN_EMPLOYEE_SESSION_EXPIRY = "torn_employee_session_expiry";
 const TORN_PRIVACY_ACK_KEY = "torn_employee_api_privacy_ack";
 const TORN_API_BASE = "https://api.torn.com";
 const TORN_CUSTOM_KEY_BUILDER_URL = "https://www.torn.com/preferences.php#tab=api?step=addNewKey&title=Bring_Em_Closer_Spy_Tool&user=reports,profile";
@@ -745,7 +756,7 @@ function setStatus(msg) {
 function friendlyErrorMessage(err) {
   const msg = String((err && err.message) || err || '');
   if (/Individual employee access is required/i.test(msg)) {
-    return 'This access code is read-only. Claiming and submitting require a personal employee code registered in the Apps Script property EMPLOYEE_ACCESS_MAP. Ask the manager for your personal code, enter it under Access code, and refresh.';
+    return 'This access is read-only. Sign in with your Torn API key, or use a personal legacy employee code configured by the manager.';
   }
   if (/Unknown action:\s*cancelOrder/i.test(msg)) {
     return 'The Apps Script backend is older than this webpage and does not support order cancellation yet. Deploy apps-script/Code.gs as a new Web App version, then refresh this page.';
@@ -755,14 +766,22 @@ function friendlyErrorMessage(err) {
   }
   return msg;
 }
-function hasAccessCode(){ return !!String(state.key || '').trim(); }
+function hasAccessCode(){ return !!String(state.sessionToken || state.key || '').trim(); }
+function currentEmployeeName(){ return String(state.identity?.name || state.me || '').trim(); }
+function currentEmployeeTornId(){ return String(state.identity?.tornId || '').trim(); }
+function isOwnedByCurrentEmployee(target){
+  const ownerId = String(target?.claimedByTornId || '').trim();
+  const myId = currentEmployeeTornId();
+  if (ownerId || myId) return !!ownerId && !!myId && ownerId === myId;
+  return normalizeEmployeeName(target?.claimedBy) === normalizeEmployeeName(currentEmployeeName());
+}
 function updateSetupState(){
   const hasCode = hasAccessCode();
-  const configured = !!(String(state.me || '').trim() && hasCode && state.accessVerified);
+  const configured = !!(currentEmployeeName() && hasCode && state.accessVerified);
   document.body.classList.toggle('has-access-code', hasCode);
   document.body.classList.toggle('is-configured', configured);
   const nameEl = qs('#setup-saved-name');
-  if (nameEl) nameEl.textContent = state.me || 'employee';
+  if (nameEl) nameEl.textContent = currentEmployeeName() || 'employee';
 }
 function normalizeEmployeeName(name){ return String(name || '').trim().toLowerCase(); }
 function escapeHtml(v){ return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -801,7 +820,10 @@ const state={
   tasks:[], 
   me:"", 
   api: DEFAULT_API, 
-  key: DEFAULT_KEY, 
+  key: DEFAULT_KEY,
+  sessionToken:"",
+  sessionExpiresAt:"",
+  identity:null,
   admin:"",
   adminVerified:false,
   accessVerified:false,
@@ -909,6 +931,14 @@ function mergeSpiesStrictTotal(spyArray){
 function loadSettings(){
   state.me=localStorage.getItem('torn_employee')||'';
   state.key = localStorage.getItem('torn_api_key') || DEFAULT_KEY;
+  state.sessionToken = sessionStorage.getItem(TORN_EMPLOYEE_SESSION_TOKEN) || '';
+  state.sessionExpiresAt = sessionStorage.getItem(TORN_EMPLOYEE_SESSION_EXPIRY) || '';
+  if (state.sessionToken && (!state.sessionExpiresAt || Date.parse(state.sessionExpiresAt) <= Date.now())) {
+    state.sessionToken = '';
+    state.sessionExpiresAt = '';
+    sessionStorage.removeItem(TORN_EMPLOYEE_SESSION_TOKEN);
+    sessionStorage.removeItem(TORN_EMPLOYEE_SESSION_EXPIRY);
+  }
   state.admin = sessionStorage.getItem('torn_admin_key') || '';
   state.torn.apiKey = sessionStorage.getItem(TORN_EMPLOYEE_API_KEY) || '';
   localStorage.removeItem('torn_admin_key');
@@ -975,8 +1005,10 @@ function setTornApiStatus(message, tone){
 }
 function saveSettings(){
   const previousKey = state.key;
-  state.me=(qs('#me').value||'').trim();
-  state.key=(qs('#api-key')?.value||'').trim();
+  if (!state.sessionToken) {
+    state.me=(qs('#me')?.value||'').trim();
+    state.key=(qs('#api-key')?.value||'').trim();
+  }
   if (state.key !== previousKey || state.key !== state.verifiedKey) state.accessVerified = false;
   state.owner=(document.querySelector('#owner')?.value||'').trim();
   const nextAdmin = (qs('#adm')?.value || '').trim();
@@ -993,12 +1025,13 @@ function saveSettings(){
 
 async function call(path, method='GET', body){
   if(!state.api) throw new Error('API not configured');
-  if(!state.key) throw new Error('Access code missing. Enter the access code and press Save.');
+  if(!hasAccessCode()) throw new Error('Employee sign-in is missing. Sign in with Torn or enter a legacy employee code.');
   const url = state.api;
   const pathQuery = new URLSearchParams(String(path || '').replace(/^\?/, ''));
   const payload = Object.assign({}, body || {});
   if (!payload.action && pathQuery.get('action')) payload.action = pathQuery.get('action');
-  payload.key = state.key;
+  if (state.sessionToken) payload.sessionToken = state.sessionToken;
+  else payload.key = state.key;
   if (state.admin) payload.admin = state.admin;
   const res = await fetch(url, {
     method: 'POST',
@@ -1008,6 +1041,75 @@ async function call(path, method='GET', body){
   const data = await res.json();
   if (data && data.ok === false) throw new Error(data.error || 'Request failed.');
   return data;
+}
+
+function clearTornEmployeeSession(options){
+  options = options || {};
+  state.sessionToken = '';
+  state.sessionExpiresAt = '';
+  state.identity = null;
+  sessionStorage.removeItem(TORN_EMPLOYEE_SESSION_TOKEN);
+  sessionStorage.removeItem(TORN_EMPLOYEE_SESSION_EXPIRY);
+  if (options.forgetKey) {
+    state.torn.apiKey = '';
+    sessionStorage.removeItem(TORN_EMPLOYEE_API_KEY);
+    sessionStorage.removeItem(TORN_PRIVACY_ACK_KEY);
+    const tornInput = qs('#torn-api-key');
+    if (tornInput) tornInput.value = '';
+  }
+}
+
+async function loginWithTorn(){
+  if (!state.api) { setStatus('API not configured.'); return; }
+  const button = qs('#torn-login-btn');
+  const tornApiKey = (qs('#torn-api-key')?.value || '').trim();
+  if (!tornApiKey) { setStatus('Enter your Torn API key first.'); return; }
+  if (!ensureTornPrivacyAcknowledged()) return;
+  if (button) { button.disabled = true; button.textContent = 'Signing in...'; }
+  setStatus('Verifying your Torn identity and company membership...');
+  try {
+    const response = await fetch(state.api, {
+      method:'POST',
+      body:JSON.stringify({ action:'authenticateTorn', tornApiKey })
+    });
+    if (!response.ok) throw new Error(await response.text());
+    const data = await response.json();
+    if (!data || data.ok === false || !data.sessionToken || !data.identity?.name) throw new Error(data?.error || 'Torn sign-in did not return a valid session.');
+    clearTornEmployeeSession();
+    state.sessionToken = data.sessionToken;
+    state.sessionExpiresAt = data.expiresAt || '';
+    state.identity = data.identity;
+    state.me = data.identity.name;
+    state.key = '';
+    state.accessVerified = true;
+    state.verifiedKey = '';
+    state.torn.apiKey = tornApiKey;
+    sessionStorage.setItem(TORN_EMPLOYEE_SESSION_TOKEN, state.sessionToken);
+    sessionStorage.setItem(TORN_EMPLOYEE_SESSION_EXPIRY, state.sessionExpiresAt);
+    sessionStorage.setItem(TORN_EMPLOYEE_API_KEY, tornApiKey);
+    localStorage.setItem('torn_employee', state.me);
+    localStorage.removeItem('torn_api_key');
+    const legacyKey = qs('#api-key');
+    if (legacyKey) legacyKey.value = '';
+    const legacyName = qs('#me');
+    if (legacyName) legacyName.value = state.me;
+    await refresh();
+    if (state.accessVerified) setStatus('Signed in as ' + state.me + '.');
+  } catch (e) {
+    clearTornEmployeeSession();
+    state.accessVerified = false;
+    setStatus('Torn sign-in failed: ' + friendlyErrorMessage(e));
+  } finally {
+    if (button) { button.disabled = false; button.textContent = 'Sign in with Torn'; }
+    updateSetupState();
+    enforceVisibility();
+  }
+}
+
+async function useLegacyAccess(){
+  clearTornEmployeeSession();
+  saveSettings();
+  await refresh();
 }
 
 async function verifyAdminKey(){
@@ -1517,35 +1619,33 @@ function renderTargets(){
 }
 
 function getEmployeeRelevantTargets(){
-  const me = normalizeEmployeeName(state.me);
+  const me = normalizeEmployeeName(currentEmployeeName());
   return state.tasks.filter(t => {
     if (t.status === 'submitted') return false;
     const assignment = getAssignment(t);
-    if (t.status === 'claimed') return normalizeEmployeeName(t.claimedBy) === me || !t.claimedBy;
+    if (t.status === 'claimed') return isOwnedByCurrentEmployee(t) || !t.claimedBy;
     if (assignment) return normalizeEmployeeName(assignment.assignedTo) === me;
     return getTargetStatus(t) === 'open';
   });
 }
 
 function getNextEmployeeTarget(){
-  const me = normalizeEmployeeName(state.me);
   const relevant = getEmployeeRelevantTargets();
-  return relevant.find(t => t.status === 'claimed' && normalizeEmployeeName(t.claimedBy) === me)
+  return relevant.find(t => t.status === 'claimed' && isOwnedByCurrentEmployee(t))
     || relevant.find(t => getAssignment(t))
     || relevant.find(t => getTargetStatus(t) === 'open')
     || null;
 }
 
 function renderEmployeeTargets(parent){
-  const me = normalizeEmployeeName(state.me);
   const relevant = getEmployeeRelevantTargets();
-  const claimed = relevant.filter(t => t.status === 'claimed' && normalizeEmployeeName(t.claimedBy) === me);
-  const available = relevant.filter(t => !(t.status === 'claimed' && normalizeEmployeeName(t.claimedBy) === me));
+  const claimed = relevant.filter(t => t.status === 'claimed' && isOwnedByCurrentEmployee(t));
+  const available = relevant.filter(t => !(t.status === 'claimed' && isOwnedByCurrentEmployee(t)));
   const remaining = relevant.length;
   const wrap = document.createElement('div');
   wrap.className = 'employee-focus';
   if (!hasAccessCode()) {
-    wrap.innerHTML = `<div class="employee-hero"><div><h2 style="margin:0">Set up your queue</h2><div class="employee-count">1. Enter display name · 2. Enter access code · 3. Press Save & refresh</div></div></div>`;
+    wrap.innerHTML = `<div class="employee-hero"><div><h2 style="margin:0">Set up your queue</h2><div class="employee-count">Enter your Torn API key and press Sign in with Torn.</div></div></div>`;
     parent.appendChild(wrap);
     return;
   }
@@ -1670,7 +1770,7 @@ function renderTargetCard(t){
   row.className = 'row';
   row.style.marginTop = '10px';
   bd.appendChild(row);
-  if (status === 'open' || (status === 'assigned' && normalizeEmployeeName(assignment.assignedTo) === normalizeEmployeeName(state.me))) addButton(row, isTaskActionBusy(t.id, 'claim') ? 'Claiming...' : 'Claim', () => claim(t.id), isTaskActionBusy(t.id, 'claim'));
+  if (status === 'open' || (status === 'assigned' && normalizeEmployeeName(assignment.assignedTo) === normalizeEmployeeName(currentEmployeeName()))) addButton(row, isTaskActionBusy(t.id, 'claim') ? 'Claiming...' : 'Claim', () => claim(t.id), isTaskActionBusy(t.id, 'claim'));
   addButton(row, 'Copy', () => copyTarget(t));
   addButton(row, 'Job special', () => openJobSpecial(t));
   if (state.adminVerified) {
@@ -1681,10 +1781,10 @@ function renderTargetCard(t){
     row.appendChild(assignInput);
     addButton(row, 'Assign', () => assignTarget(t.id, assignInput.value));
   }
-  if (t.status === 'claimed' && (normalizeEmployeeName(t.claimedBy) === normalizeEmployeeName(state.me) || status === 'stale')) {
+  if (t.status === 'claimed' && (isOwnedByCurrentEmployee(t) || status === 'stale')) {
     addButton(row, isTaskActionBusy(t.id, 'release') ? 'Releasing...' : (status === 'stale' ? 'Release stale' : 'Release'), () => unclaim(t.id), isTaskActionBusy(t.id, 'release'));
   }
-  if (t.status === 'claimed' && normalizeEmployeeName(t.claimedBy) === normalizeEmployeeName(state.me)) renderSubmitPanel(bd, t);
+  if (t.status === 'claimed' && isOwnedByCurrentEmployee(t)) renderSubmitPanel(bd, t);
   return card;
 }
 
@@ -2144,7 +2244,7 @@ async function refresh(options){
     state.orders = [];
     render();
     enforceVisibility();
-    setStatus('Enter access code and press Save & refresh to load targets.');
+    setStatus('Sign in with Torn to load targets.');
     return;
   }
   setStatus('');
@@ -2155,9 +2255,14 @@ async function refresh(options){
     state.orders=data.orders||[];
     state.customerPayments=data.customerPayments||[];
     state.employeePayouts=data.employeePayouts||[];
+    if (data.identity) {
+      state.identity = data.identity;
+      state.me = data.identity.name || state.me;
+      localStorage.setItem('torn_employee', state.me);
+    }
     state.accessVerified = true;
     state.verifiedKey = state.key;
-    localStorage.setItem('torn_api_key', state.key);
+    if (state.key) localStorage.setItem('torn_api_key', state.key);
     if(data.deliveryHistory&&data.deliveryHistory.length) state.history=data.deliveryHistory.concat(state.history).slice(0,500);
     if (state.admin && !options.skipAdminVerify) await verifyAdminKey();
     if (state.adminVerified && !options.skipReviewSync) {
@@ -2180,20 +2285,27 @@ async function refresh(options){
     state.adminVerified = false;
     state.accessVerified = false;
     state.verifiedKey = '';
-    localStorage.removeItem('torn_api_key');
+    if (/session|sign in with Torn/i.test(String(e?.message || e))) clearTornEmployeeSession();
+    if (state.key) localStorage.removeItem('torn_api_key');
     setStatus('Refresh failed: '+friendlyErrorMessage(e));
   }
+  updateSetupState();
   enforceVisibility();
 }
 function editAccess(){
+  clearTornEmployeeSession({ forgetKey:true });
   state.accessVerified = false;
   state.verifiedKey = '';
+  state.key = '';
+  state.tasks = [];
+  state.orders = [];
   localStorage.removeItem('torn_api_key');
   updateSetupState();
   enforceVisibility();
-  const input = qs('#api-key');
+  const input = qs('#torn-api-key');
   if (input) input.focus();
-  setStatus('Edit the access code, then press Save & refresh.');
+  render();
+  setStatus('Signed out. Enter your Torn API key to sign in again.');
 }
 async function reconcileLocalReviewsToServer_(){
   // Local review cache is presentation state only. Automatically replaying it
@@ -2203,11 +2315,13 @@ async function reconcileLocalReviewsToServer_(){
 }
 
 async function claim(id){
-  if(!state.me){ alert('Set your display name first.'); return; }
+  const employeeName = currentEmployeeName();
+  if(!employeeName){ alert('Sign in with Torn first.'); return; }
   const task = state.tasks.find(t => String(t.id)===String(id));
   if (task) {
     task.status = 'claimed';
-    task.claimedBy = state.me.trim();
+    task.claimedBy = employeeName;
+    task.claimedByTornId = currentEmployeeTornId();
     task.claimedAt = new Date().toISOString();
     setTaskBusy(id, true, 'claim');
     render();
@@ -2215,7 +2329,7 @@ async function claim(id){
   setStatus('Claiming target...');
   const claimRequest = getOrCreateOperationRequestId('claim', { id });
   try{
-    await call('', 'POST', {action:'claim', id, employee: state.me.trim(), requestId:claimRequest.requestId});
+    await call('', 'POST', {action:'claim', id, employee:employeeName, requestId:claimRequest.requestId});
     sessionStorage.removeItem(claimRequest.key);
     delete state.assignments[taskKey(task)];
     saveAssignments();
@@ -2234,6 +2348,7 @@ async function unclaim(id){
   if (task) {
     task.status = 'open';
     task.claimedBy = '';
+    task.claimedByTornId = '';
     task.claimedAt = '';
     setTaskBusy(id, true, 'release');
     render();
@@ -2241,7 +2356,7 @@ async function unclaim(id){
   setStatus('Removing claim...');
   const unclaimRequest = getOrCreateOperationRequestId('unclaim', { id });
   try{
-    await call('', 'POST', {action:'unclaim', id, employee: state.me.trim(), requestId:unclaimRequest.requestId});
+    await call('', 'POST', {action:'unclaim', id, employee:currentEmployeeName(), requestId:unclaimRequest.requestId});
     sessionStorage.removeItem(unclaimRequest.key);
     addAuditLog('target_released', task && task.targetId, task && task.targetName);
     setTaskBusy(id, false);
@@ -2254,7 +2369,8 @@ async function unclaim(id){
   }
 }
 async function submitSpy(id){
-  if(!state.me){ alert('Set your display name first.'); return; }
+  const employeeName = currentEmployeeName();
+  if(!employeeName){ alert('Sign in with Torn first.'); return; }
   let raw = '';
   try{
     const ta = document.getElementById('paste-'+id);
@@ -2327,7 +2443,7 @@ async function submitSpy(id){
 
     const submissionRequest = getOrCreateSubmissionRequestId(id, raw);
     await call('', 'POST', {
-      action:'submit', id, employee: state.me.trim(),
+      action:'submit', id, employee:employeeName,
       name: payload.name, targetId: payload.targetId, payload,
       requestId: submissionRequest.requestId
     });
@@ -2337,7 +2453,7 @@ async function submitSpy(id){
     state.reviews[taskKey(task)] = {
       status: 'pending_review',
       rawText: raw,
-      submittedBy: state.me.trim(),
+      submittedBy:employeeName,
       submittedAt: new Date().toISOString(),
       warnings: submitWarnings.concat(buildSubmissionWarnings(task, payload)),
       editedPayload: null
@@ -3111,9 +3227,9 @@ function ensureTornPrivacyAcknowledged(){
   const ok = window.confirm([
     'Use your Torn API key?',
     '',
-    'Required access: Custom key with user -> reports and user -> profile. Profile is used only to fill missing level. Do not use Full Access.',
-    'The key will be stored only in this browser session and used directly against api.torn.com.',
-    'It will not be saved to Google Sheets or Apps Script.',
+    'The key is sent once to this tool\'s Apps Script backend to verify your Torn ID and company membership.',
+    'Apps Script exchanges it for a temporary signed session and does not save the key in Sheets or Script Properties.',
+    'The browser keeps the key only for this tab/session and sends it directly to api.torn.com for report lookup. Do not use Full Access.',
     '',
     'Continue?'
   ].join('\n'));
@@ -3142,9 +3258,8 @@ async function fetchTornEndpoint(path, params){
   Object.entries(params || {}).forEach(([k,v]) => {
     if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, String(v));
   });
-  url.searchParams.set('key', key);
   try{
-    const res = await fetch(url.toString(), { method:'GET' });
+    const res = await fetch(url.toString(), { method:'GET', headers:{ Authorization:'ApiKey ' + key } });
     const data = await res.json();
     if (!res.ok) throw new Error('Torn API returned HTTP ' + res.status);
     if (data && data.error) throw new Error(data.error.error || data.error.message || JSON.stringify(data.error));
@@ -4207,7 +4322,8 @@ async function openJobSpecial(target){
 
 // ===== Events =====
 (function bind(){
-  const saveBtn=qs('#save');   if(saveBtn) saveBtn.addEventListener('click',()=>{ saveSettings(); refresh(); });
+  const saveBtn=qs('#save');   if(saveBtn) saveBtn.addEventListener('click',useLegacyAccess);
+  const tornLoginBtn=qs('#torn-login-btn'); if(tornLoginBtn) tornLoginBtn.addEventListener('click',loginWithTorn);
   const refBtn =qs('#refresh');if(refBtn)  refBtn.addEventListener('click',()=>{ refresh(); });
   const editAccessBtn=qs('#edit-access');if(editAccessBtn) editAccessBtn.addEventListener('click',editAccess);
   const themeBtn=qs('#theme-toggle'); if(themeBtn) themeBtn.addEventListener('click',toggleTheme);
@@ -4215,7 +4331,10 @@ async function openJobSpecial(target){
   const createTornKeyBtn=qs('#create-torn-log-key'); if(createTornKeyBtn) createTornKeyBtn.addEventListener('click',openTornCustomKeyBuilder);
   const verifyTornBtn=qs('#verify-torn-key'); if(verifyTornBtn) verifyTornBtn.addEventListener('click',verifyTornKey);
   const forgetTornBtn=qs('#forget-torn-key'); if(forgetTornBtn) forgetTornBtn.addEventListener('click',forgetTornKey);
-  const tornKeyInput=qs('#torn-api-key'); if(tornKeyInput) tornKeyInput.addEventListener('input',()=>{ state.torn.apiKey = tornKeyInput.value.trim(); state.torn.verified = null; if (state.torn.apiKey) sessionStorage.setItem(TORN_EMPLOYEE_API_KEY, state.torn.apiKey); else sessionStorage.removeItem(TORN_EMPLOYEE_API_KEY); });
+  const tornKeyInput=qs('#torn-api-key'); if(tornKeyInput) {
+    tornKeyInput.addEventListener('input',()=>{ state.torn.apiKey = tornKeyInput.value.trim(); state.torn.verified = null; if (state.torn.apiKey) sessionStorage.setItem(TORN_EMPLOYEE_API_KEY, state.torn.apiKey); else sessionStorage.removeItem(TORN_EMPLOYEE_API_KEY); });
+    tornKeyInput.addEventListener('keydown',(event)=>{ if(event.key === 'Enter'){ event.preventDefault(); loginWithTorn(); } });
+  }
   const managerLoginBtn=qs('#manager-login-btn'); if(managerLoginBtn) managerLoginBtn.addEventListener('click',loginManager);
   const managerRefreshBtn=qs('#manager-refresh'); if(managerRefreshBtn) managerRefreshBtn.addEventListener('click',refresh);
   const managerTab=qs('#tab-manage');

@@ -12,7 +12,17 @@ Setup:
 2. Extensions -> Apps Script.
 3. Paste `apps-script/Code.gs`.
 4. In Project Settings, enable the manifest file and copy `apps-script/appsscript.json` so the deployment explicitly requests Sheets, script properties, and external request access.
-5. Set Script Properties: `API_KEY`, `ADMIN_KEY`, `EMPLOYEE_ACCESS_MAP`, and optionally `MANAGER_DISCORD_WEBHOOK_URL` and `EMPLOYEE_DISCORD_WEBHOOK_URL`.
+5. Set the required Script Properties: `TORN_COMPANY_ID` and `ADMIN_KEY`. Optionally set `TORN_SESSION_HOURS` (default 8, maximum 24), Discord webhook properties, and the legacy `API_KEY` / `EMPLOYEE_ACCESS_MAP` properties.
+
+## Employee sign-in with Torn
+
+Employees sign in with their own Torn API key. The backend calls Torn's public identity and company employee endpoints, verifies that the Torn ID belongs to `TORN_COMPANY_ID`, and returns a short-lived signed session. Claims and submissions are owned by Torn ID, so a typed or changed display name cannot impersonate another employee.
+
+The raw Torn key is not written to Sheets or Script Properties. It is sent to Apps Script once during sign-in and retained only in the browser session for optional direct Torn report lookup. The signed employee session is also stored only in browser session storage. `SESSION_SECRET` is generated automatically the first time an employee signs in; you may set it yourself to a long random value before first use.
+
+Employees should use a narrowly scoped Custom key and must not use a Full Access key. Signing out removes the key and employee session from that browser session.
+
+### Legacy employee codes (optional fallback)
 
 `EMPLOYEE_ACCESS_MAP` must be a JSON object mapping each employee's private access code to their canonical display name. The shared `API_KEY` is read-only for employee actions; claiming, releasing, and submitting require a mapped personal code. Example:
 
@@ -20,7 +30,7 @@ Setup:
 {"unique-code-for-kattemannen":"Kattemannen","unique-code-for-alice":"Alice"}
 ```
 
-Use unique random codes, do not reuse `ADMIN_KEY`, and distribute each code only to its employee. Script Property changes take effect without creating a new deployment version.
+If you retain this fallback, use unique random codes, do not reuse `ADMIN_KEY`, and distribute each code only to its employee. Script Property changes take effect without creating a new deployment version.
 
 `MANAGER_DISCORD_WEBHOOK_URL` is used for completed order notifications. `EMPLOYEE_DISCORD_WEBHOOK_URL` is used for new order notifications. `DISCORD_WEBHOOK_URL` still works as a fallback if you only want one webhook.
 
