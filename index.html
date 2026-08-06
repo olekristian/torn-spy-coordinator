@@ -328,6 +328,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
 .financial-cell strong { display:block; margin-top:2px; font-size:13px; }
 @media (max-width: 760px) {
   .wrap { margin: 10px auto; padding: 0 10px; }
+  .top-controls { position: static; top: auto; z-index: auto; background: transparent; backdrop-filter: none; padding-top: 0; }
   .dashboard { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dash-card:last-child { grid-column: span 2; }
   .bar input, .bar button, .filters input, .filters select, .filters button { width:100% !important; }
@@ -707,7 +708,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
 
 <script>
 const DEFAULT_API = "https://script.google.com/macros/s/AKfycbwmvn4x0wmHDllT-IYWINU1OI-DG9Hdk_sEhZUQKmsqJA16y9yOOnAHjJ6NGIqI9WTQ/exec";
-const APP_FRONTEND_VERSION = "2026-08-05-admin-overview-v1";
+const APP_FRONTEND_VERSION = "2026-08-06-mobile-submit-v1";
 const DEFAULT_KEY = "";
 const STALE_WARNING_MINUTES = 30;
 const STALE_DANGER_MINUTES = 60;

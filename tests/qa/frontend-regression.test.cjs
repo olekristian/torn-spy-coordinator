@@ -75,3 +75,9 @@ test('admin hides finished orders and empty automation queues by default', () =>
   assert.match(html, /visibleGroups\.length \? visibleGroups\.map/);
   assert.match(html, /No automation queues need attention/);
 });
+
+test('mobile setup controls do not overlay the spy submission form', () => {
+  const mobileCss = html.match(/@media \(max-width: 760px\) \{([\s\S]*?)\n\}/)?.[1] || '';
+  assert.match(mobileCss, /\.top-controls\s*\{[^}]*position:\s*static/);
+  assert.match(mobileCss, /backdrop-filter:\s*none/);
+});
