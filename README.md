@@ -12,7 +12,7 @@ Setup:
 2. Extensions -> Apps Script.
 3. Paste `apps-script/Code.gs`.
 4. In Project Settings, enable the manifest file and copy `apps-script/appsscript.json` so the deployment explicitly requests Sheets, script properties, and external request access.
-5. Set the required Script Properties: `TORN_COMPANY_ID` and `ADMIN_KEY`. Optionally set `TORN_SESSION_HOURS` (default 8, maximum 24), Discord webhook properties, and the legacy `API_KEY` / `EMPLOYEE_ACCESS_MAP` properties.
+5. Set the required Script Properties: `TORN_COMPANY_ID` and `ADMIN_KEY`. `TORN_COMPANY_ID` must be the numeric company ID from the Torn company page URL (`joblist.php#/p=corpinfo&ID=12345` means `12345`), not the company type ID. Optionally set `TORN_SESSION_HOURS` (default 8, maximum 24), Discord webhook properties, and the legacy `API_KEY` / `EMPLOYEE_ACCESS_MAP` properties.
 
 ## Employee sign-in with Torn
 

@@ -76,6 +76,23 @@ test('Torn sign-in explains missing Custom key selections', () => {
   assert.match(missingProfile.error, /missing user → profile access/);
 });
 
+test('Torn sign-in accepts company ID from the alternate key-info access shape', () => {
+  const h = createHarness({
+    urlFetchResponse(url) {
+      if (url.endsWith('/key/info')) {
+        return { code:200, body:JSON.stringify({ info:{ user:{ id:9001 }, access:{ company_id:12345 } } }) };
+      }
+      if (url.endsWith('/user/profile')) {
+        return { code:200, body:JSON.stringify({ profile:{ id:9001, name:'Kattemannen' } }) };
+      }
+      throw new Error('Unexpected URL: ' + url);
+    },
+  });
+  const signedIn = h.request({ action:'authenticateTorn', tornApiKey:'custom-key' });
+  assert.equal(signedIn.ok, true);
+  assert.equal(signedIn.identity.tornId, '9001');
+});
+
 test('tampered Torn sessions and non-company Torn users are rejected', () => {
   const h = createHarness({
     urlFetchResponse(url) {
@@ -85,7 +102,8 @@ test('tampered Torn sessions and non-company Torn users are rejected', () => {
   });
   const denied = h.request({ action:'authenticateTorn', tornApiKey:'outsider-key' });
   assert.equal(denied.ok, false);
-  assert.match(denied.error, /not a current employee/);
+  assert.match(denied.error, /Torn reports this account in company 99999/);
+  assert.match(denied.error, /TORN_COMPANY_ID is 12345/);
 
   const valid = h.context.issueSessionToken_({ v:1, sub:'9001', name:'Kattemannen', companyId:'12345', exp:Date.now() + 60000 });
   const tampered = valid.slice(0, -1) + (valid.endsWith('A') ? 'B' : 'A');

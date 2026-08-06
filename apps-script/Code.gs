@@ -11,7 +11,7 @@ function _employeeAccessMap_(){
     throw new Error('EMPLOYEE_ACCESS_MAP is not valid JSON.');
   }
 }
-const BACKEND_VERSION = '2026-08-06-torn-auth-v3';
+const BACKEND_VERSION = '2026-08-06-torn-auth-v4';
 const TORN_API_V2_BASE = 'https://api.torn.com/v2';
 const DEFAULT_TORN_SESSION_HOURS = 8;
 const MANAGER_WEBHOOK_KEYS = ['MANAGER_DISCORD_WEBHOOK_URL','DISCORD_MANAGER_WEBHOOK_URL','MANAGER_WEBHOOK_URL','DISCORD_WEBHOOK_URL'];
@@ -1980,9 +1980,17 @@ function authenticateTorn_(input) {
   const keyInfo = keyInfoResponse && keyInfoResponse.info || keyInfoResponse || {};
   const keyUser = keyInfo.user || {};
   const tornId = String(keyUser.id || keyUser.player_id || '').trim();
-  const memberCompanyId = String(keyUser.company_id || '').trim();
+  const memberCompanyValue = keyUser.company_id != null
+    ? keyUser.company_id
+    : (keyInfo.access && keyInfo.access.company_id != null ? keyInfo.access.company_id : keyInfo.company_id);
+  const memberCompanyId = String(memberCompanyValue == null ? '' : memberCompanyValue).trim();
   if (!/^\d+$/.test(tornId)) throw new Error('Torn did not return a valid key owner identity.');
-  if (memberCompanyId !== companyId) throw new Error('This Torn account is not a current employee of the configured company.');
+  if (!/^\d+$/.test(memberCompanyId)) {
+    throw new Error('Torn key info reports that this account is not currently in a company. Confirm the key belongs to the intended Torn account and try again.');
+  }
+  if (memberCompanyId !== companyId) {
+    throw new Error('Torn reports this account in company ' + memberCompanyId + ', but the backend TORN_COMPANY_ID is ' + companyId + '. Update the Apps Script property to the numeric ID from the intended company page URL.');
+  }
 
   const profileResponse = tornApiGet_('/user/profile', tornApiKey);
   const profile = profileResponse && profileResponse.profile || profileResponse || {};
