@@ -383,7 +383,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
         <summary>Torn API key settings</summary>
         <div class="grid" style="margin-top:8px">
           <div class="api-privacy">
-            Use a Custom Torn API key with <strong>user → profile</strong> for sign-in and <strong>user → reports</strong> for report lookup. Company membership is verified from Torn's authenticated key information. The key stays in this browser session and is sent directly to Torn for report lookups.
+            Use a Custom Torn API key with <strong>key → info</strong> and <strong>user → profile</strong> for sign-in, plus <strong>user → reports</strong> for report lookup. Key info verifies Torn ID and company membership. The key stays in this browser session and is sent directly to Torn for report lookups.
           </div>
           <div class="bar">
             <button id="create-torn-log-key" type="button" class="secondary">Create Torn API key</button>
@@ -392,7 +392,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
             <button id="verify-torn-key" type="button" class="secondary">Verify key</button>
             <button id="forget-torn-key" type="button" class="secondary">Forget report key</button>
           </div>
-          <div id="torn-api-status" class="api-status muted">Required for sign-in: user → profile. Optional report lookup: user → reports. Do not use Full Access.</div>
+          <div id="torn-api-status" class="api-status muted">Required for sign-in: key → info and user → profile. Optional report lookup: user → reports. Do not use Full Access.</div>
         </div>
       </details>
       <details class="manager-login manager-entry">
@@ -717,7 +717,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
 
 <script>
 const DEFAULT_API = "https://script.google.com/macros/s/AKfycbwmvn4x0wmHDllT-IYWINU1OI-DG9Hdk_sEhZUQKmsqJA16y9yOOnAHjJ6NGIqI9WTQ/exec";
-const APP_FRONTEND_VERSION = "2026-08-06-torn-auth-v2";
+const APP_FRONTEND_VERSION = "2026-08-06-torn-auth-v3";
 const DEFAULT_KEY = "";
 const STALE_WARNING_MINUTES = 30;
 const STALE_DANGER_MINUTES = 60;
@@ -733,7 +733,7 @@ const TORN_EMPLOYEE_SESSION_EXPIRY = "torn_employee_session_expiry";
 const EMPLOYEE_DRAFTS_KEY = "torn_employee_spy_drafts_session";
 const TORN_PRIVACY_ACK_KEY = "torn_employee_api_privacy_ack";
 const TORN_API_BASE = "https://api.torn.com";
-const TORN_CUSTOM_KEY_BUILDER_URL = "https://www.torn.com/preferences.php#tab=api?step=addNewKey&title=Bring_Em_Closer_Spy_Tool&user=reports,profile";
+const TORN_CUSTOM_KEY_BUILDER_URL = "https://www.torn.com/preferences.php#tab=api?step=addNewKey&title=Bring_Em_Closer_Spy_Tool&key=info&user=reports,profile";
 const TORN_REPORT_LOOKUP_ATTEMPTS = 4;
 const TORN_REPORT_LOOKUP_DELAY_MS = 1400;
 const TORN_REPORT_FETCH_LIMIT = 100;
@@ -3384,9 +3384,9 @@ function ensureTornPrivacyAcknowledged(){
 
 function openTornCustomKeyBuilder(){
   const popup = window.open(TORN_CUSTOM_KEY_BUILDER_URL, '_blank', 'noopener');
-  const message = 'The Torn key page should open with user -> profile and user -> reports selected. Profile enables sign-in and fills missing level; reports provide stats. Confirm it has no extra access. Do not use Full Access.';
+  const message = 'The Torn key page should open with key -> info, user -> profile, and user -> reports selected. Key info and profile enable sign-in; reports provide stats. Confirm it has no extra access. Do not use Full Access.';
   setTornApiStatus(message);
-  if (!popup) setStatus('Popup blocked. Open Torn API preferences and create a Custom key with user -> profile and user -> reports.');
+  if (!popup) setStatus('Popup blocked. Open Torn API preferences and create a Custom key with key -> info, user -> profile, and user -> reports.');
 }
 
 function getTornApiKey(){
@@ -3428,7 +3428,9 @@ async function verifyTornKey(){
     const owner = details.user?.id || details.user || details.name || details.player || details.id || 'verified';
     const selections = details.selections || {};
     const userSelections = Array.isArray(selections.user) ? selections.user : [];
+    const keySelections = Array.isArray(selections.key) ? selections.key : [];
     const missingSignIn = [];
+    if (!keySelections.includes('info')) missingSignIn.push('key -> info');
     if (!userSelections.includes('profile')) missingSignIn.push('user -> profile');
     const missingReports = [];
     if (!userSelections.includes('reports')) missingReports.push('user -> reports');

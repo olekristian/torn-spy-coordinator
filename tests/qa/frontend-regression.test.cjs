@@ -98,7 +98,8 @@ test('Torn employee sign-in stores only a temporary session outside localStorage
   assert.match(html, /payload\.sessionToken = state\.sessionToken/);
   assert.match(html, /function isOwnedByCurrentEmployee/);
   assert.match(html, /claimedByTornId/);
-  assert.match(html, /user=reports,profile/);
+  assert.match(html, /key=info&user=reports,profile/);
+  assert.match(html, /key → info/);
   assert.match(html, /user → profile/);
   assert.match(html, />Create Torn API key</);
   assert.match(html, /deployed Apps Script backend is out of date/);
@@ -117,6 +118,7 @@ test('Torn key verification uses the v2 key-info endpoint and checks required se
   const end = html.indexOf('function forgetTornKey', start);
   const source = html.slice(start, end);
   assert.match(source, /fetchTornEndpoint\('\/v2\/key\/info'\)/);
+  assert.match(source, /keySelections\.includes\('info'\)/);
   assert.match(source, /userSelections\.includes\('reports'\)/);
   assert.match(source, /userSelections\.includes\('profile'\)/);
   assert.doesNotMatch(source, /fetchTornEndpoint\('\/key\/'/);
