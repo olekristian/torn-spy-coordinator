@@ -2008,6 +2008,14 @@ function tornApiGet_(path, tornApiKey) {
   if (code < 200 || code >= 300 || (data && data.error)) {
     const apiError = data && data.error;
     const message = apiError && (apiError.error || apiError.message) || 'HTTP ' + code;
+    if (Number(apiError && apiError.code) === 16) {
+      if (/^\/user\/basic(?:\?|$)/.test(path)) {
+        throw new Error('Torn API authentication failed: this Custom key is missing user → basic access. Create or update the key with user → basic and company → employees.');
+      }
+      if (/^\/company\/[^/]+\/employees(?:\?|$)/.test(path)) {
+        throw new Error('Torn API authentication failed: this Custom key is missing company → employees access. Create or update the key with user → basic and company → employees.');
+      }
+    }
     throw new Error('Torn API authentication failed: ' + message);
   }
   return data;

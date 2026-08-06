@@ -20,7 +20,7 @@ Employees sign in with their own Torn API key. The backend calls Torn's public i
 
 The raw Torn key is not written to Sheets or Script Properties. It is sent to Apps Script once during sign-in and retained only in the browser session for optional direct Torn report lookup. The signed employee session is also stored only in browser session storage. `SESSION_SECRET` is generated automatically the first time an employee signs in; you may set it yourself to a long random value before first use.
 
-Employees should use a narrowly scoped Custom key and must not use a Full Access key. Signing out removes the key and employee session from that browser session.
+Employees should use a narrowly scoped Custom key and must not use a Full Access key. Sign-in requires the `user → basic` and `company → employees` selections. Optional report lookup additionally requires `user → reports` and `user → profile`. Signing out removes the key and employee session from that browser session.
 
 ### Legacy employee codes (optional fallback)
 

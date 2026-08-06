@@ -14,13 +14,13 @@ test('custom Pages workflow deploys main with required permissions', () => {
   assert.match(workflow, /name: github-pages/);
 });
 
-test('custom Pages workflow serializes deploys and extends the Pages queue timeout', () => {
+test('custom Pages workflow serializes deploys without an unsupported timeout override', () => {
   assert.match(workflow, /group: pages/);
   assert.match(workflow, /cancel-in-progress: true/);
   assert.match(workflow, /actions\/checkout@v6/);
   assert.match(workflow, /actions\/configure-pages@v5/);
   assert.match(workflow, /actions\/upload-pages-artifact@v4/);
   assert.match(workflow, /actions\/deploy-pages@v5/);
-  assert.match(workflow, /timeout: 1800000/);
+  assert.doesNotMatch(workflow, /timeout:\s*1800000/);
   assert.match(workflow, /timeout-minutes: 40/);
 });

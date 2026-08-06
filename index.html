@@ -380,19 +380,19 @@ body:not(.is-admin) .manager-only { display:none !important; }
       </details>
       <div id="err" class="status-line muted" role="status" aria-live="polite" aria-atomic="true"></div>
       <details class="manager-login manager-entry">
-        <summary>Torn report settings</summary>
+        <summary>Torn API key settings</summary>
         <div class="grid" style="margin-top:8px">
           <div class="api-privacy">
-            Report lookup requires a Custom Torn API key with <strong>user → reports</strong> and <strong>user → profile</strong>. The key stays in this browser session and is sent directly to Torn for these lookups.
+            Use a Custom Torn API key with <strong>user → basic</strong> and <strong>company → employees</strong> for sign-in. Report lookup additionally requires <strong>user → reports</strong> and <strong>user → profile</strong>. The key stays in this browser session and is sent directly to Torn for report lookups.
           </div>
           <div class="bar">
-            <button id="create-torn-log-key" type="button" class="secondary">Create Torn log key</button>
+            <button id="create-torn-log-key" type="button" class="secondary">Create Torn API key</button>
             <label class="sr-only" for="torn-log-hours">Hours to search</label>
             <input id="torn-log-hours" type="number" min="1" max="72" step="1" value="24" aria-label="Hours to search" style="width:120px">
             <button id="verify-torn-key" type="button" class="secondary">Verify key</button>
             <button id="forget-torn-key" type="button" class="secondary">Forget report key</button>
           </div>
-          <div id="torn-api-status" class="api-status muted">Optional. Required access: Custom key with user → reports and user → profile. Do not use Full Access.</div>
+          <div id="torn-api-status" class="api-status muted">Required for sign-in: user → basic and company → employees. Optional report lookup: user → reports and user → profile. Do not use Full Access.</div>
         </div>
       </details>
       <details class="manager-login manager-entry">
@@ -733,7 +733,7 @@ const TORN_EMPLOYEE_SESSION_EXPIRY = "torn_employee_session_expiry";
 const EMPLOYEE_DRAFTS_KEY = "torn_employee_spy_drafts_session";
 const TORN_PRIVACY_ACK_KEY = "torn_employee_api_privacy_ack";
 const TORN_API_BASE = "https://api.torn.com";
-const TORN_CUSTOM_KEY_BUILDER_URL = "https://www.torn.com/preferences.php#tab=api?step=addNewKey&title=Bring_Em_Closer_Spy_Tool&user=reports,profile";
+const TORN_CUSTOM_KEY_BUILDER_URL = "https://www.torn.com/preferences.php#tab=api?step=addNewKey&title=Bring_Em_Closer_Spy_Tool&user=basic,reports,profile&company=employees";
 const TORN_REPORT_LOOKUP_ATTEMPTS = 4;
 const TORN_REPORT_LOOKUP_DELAY_MS = 1400;
 const TORN_REPORT_FETCH_LIMIT = 100;
@@ -3379,9 +3379,9 @@ function ensureTornPrivacyAcknowledged(){
 
 function openTornCustomKeyBuilder(){
   const popup = window.open(TORN_CUSTOM_KEY_BUILDER_URL, '_blank', 'noopener');
-  const message = 'The Torn key page should open with user -> reports and user -> profile selected. Reports provide stats; profile fills missing level. Confirm it has no extra access. Do not use Full Access.';
+  const message = 'The Torn key page should open with user -> basic, user -> reports, user -> profile, and company -> employees selected. Basic and employees enable sign-in; reports provide stats; profile fills missing level. Confirm it has no extra access. Do not use Full Access.';
   setTornApiStatus(message);
-  if (!popup) setStatus('Popup blocked. Open Torn API preferences and create a Custom key with user -> reports and user -> profile.');
+  if (!popup) setStatus('Popup blocked. Open Torn API preferences and create a Custom key with user -> basic, user -> reports, user -> profile, and company -> employees.');
 }
 
 function getTornApiKey(){

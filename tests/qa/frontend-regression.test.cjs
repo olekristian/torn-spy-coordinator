@@ -98,6 +98,10 @@ test('Torn employee sign-in stores only a temporary session outside localStorage
   assert.match(html, /payload\.sessionToken = state\.sessionToken/);
   assert.match(html, /function isOwnedByCurrentEmployee/);
   assert.match(html, /claimedByTornId/);
+  assert.match(html, /user=basic,reports,profile&company=employees/);
+  assert.match(html, /user → basic/);
+  assert.match(html, /company → employees/);
+  assert.match(html, />Create Torn API key</);
 });
 
 test('direct Torn report requests use the Authorization header, not URL credentials', () => {

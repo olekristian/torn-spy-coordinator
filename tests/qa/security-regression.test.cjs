@@ -63,6 +63,27 @@ test('Torn sign-in verifies identity and company membership without persisting t
   assert.equal(String(h.rows('Targets')[0].claimedByTornId), '9001');
 });
 
+test('Torn sign-in explains missing Custom key selections', () => {
+  const missingBasic = createHarness({
+    urlFetchResponse() {
+      return { code:403, body:JSON.stringify({ error:{ code:16, error:'Access level of this key is not high enough' } }) };
+    },
+  }).request({ action:'authenticateTorn', tornApiKey:'custom-key' });
+  assert.equal(missingBasic.ok, false);
+  assert.match(missingBasic.error, /missing user → basic access/);
+
+  const missingEmployees = createHarness({
+    urlFetchResponse(url) {
+      if (url.endsWith('/user/basic')) {
+        return { code:200, body:JSON.stringify({ profile:{ id:9001, name:'Kattemannen' } }) };
+      }
+      return { code:403, body:JSON.stringify({ error:{ code:16, error:'Access level of this key is not high enough' } }) };
+    },
+  }).request({ action:'authenticateTorn', tornApiKey:'custom-key' });
+  assert.equal(missingEmployees.ok, false);
+  assert.match(missingEmployees.error, /missing company → employees access/);
+});
+
 test('tampered Torn sessions and non-company Torn users are rejected', () => {
   const h = createHarness({
     urlFetchResponse(url) {
