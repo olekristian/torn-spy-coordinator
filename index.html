@@ -717,7 +717,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
 
 <script>
 const DEFAULT_API = "https://script.google.com/macros/s/AKfycbwmvn4x0wmHDllT-IYWINU1OI-DG9Hdk_sEhZUQKmsqJA16y9yOOnAHjJ6NGIqI9WTQ/exec";
-const APP_FRONTEND_VERSION = "2026-08-06-torn-auth-v4";
+const APP_FRONTEND_VERSION = "2026-08-06-manager-assisted-submit-v1";
 const DEFAULT_KEY = "";
 const STALE_WARNING_MINUTES = 30;
 const STALE_DANGER_MINUTES = 60;
@@ -839,6 +839,7 @@ const state={
   auditLog: [],
   reviews: {},
   assignments: {},
+  assistedFor: {},
   history: [],
   orders: [],
   customerPayments: [],
@@ -1902,6 +1903,13 @@ function renderTargetCard(t){
     addButton(row, isTaskActionBusy(t.id, 'release') ? 'Releasing...' : (status === 'stale' ? 'Release stale' : 'Release'), () => unclaim(t.id), isTaskActionBusy(t.id, 'release'));
   }
   if (t.status === 'claimed' && isOwnedByCurrentEmployee(t)) renderSubmitPanel(bd, t);
+  if (state.adminVerified && !['submitted','cancelled'].includes(String(t.status || 'open'))) {
+    const assisted = document.createElement('details');
+    assisted.style.marginTop = '10px';
+    assisted.innerHTML = '<summary>Submit on behalf of a company member</summary>';
+    renderSubmitPanel(assisted, t, { managerAssisted:true });
+    bd.appendChild(assisted);
+  }
   return card;
 }
 
@@ -1914,12 +1922,25 @@ function addButton(parent, text, onClick, disabled, className){
   parent.appendChild(button);
 }
 
-function renderSubmitPanel(parent, t){
+function renderSubmitPanel(parent, t, options){
+  options = options || {};
+  const managerAssisted = !!options.managerAssisted;
   const hint = document.createElement('div');
   hint.className = 'muted';
   hint.style.margin = '10px 0 6px';
-  hint.textContent = 'Paste spy text, review parsed fields, correct if needed, then submit.';
+  hint.textContent = managerAssisted
+    ? 'Enter the member who performed the spy. The submission will record you separately as the manager who entered it.'
+    : 'Paste spy text, review parsed fields, correct if needed, then submit.';
   parent.appendChild(hint);
+  if (managerAssisted) {
+    const performedBy = document.createElement('input');
+    performedBy.id = 'submit-for-' + t.id;
+    performedBy.placeholder = 'Company member display name';
+    performedBy.value = state.assistedFor[String(t.id)] || t.claimedBy || getAssignment(t)?.assignedTo || '';
+    performedBy.style.width = '100%';
+    performedBy.addEventListener('input', () => { state.assistedFor[String(t.id)] = performedBy.value || ''; });
+    parent.appendChild(performedBy);
+  }
   const ta = document.createElement('textarea');
   ta.id = 'paste-' + t.id;
   ta.placeholder = 'Paste spy text here';
@@ -1937,8 +1958,8 @@ function renderSubmitPanel(parent, t){
   row.style.marginTop = '8px';
   parent.appendChild(row);
   addButton(row, isTaskActionBusy(t.id, 'logs') ? 'Searching reports...' : 'Find spy report', () => findSpyFromLogs(t.id, false), isTaskBusy(t.id), 'secondary');
-  addButton(row, isTaskActionBusy(t.id, 'submit') ? 'Submitting...' : 'Submit found spy', () => findSpyFromLogs(t.id, true), isTaskBusy(t.id), 'secondary');
-  addButton(row, isTaskActionBusy(t.id, 'submit') ? 'Submitting...' : 'Submit Result', () => submitSpy(t.id), isTaskBusy(t.id));
+  if (!managerAssisted) addButton(row, isTaskActionBusy(t.id, 'submit') ? 'Submitting...' : 'Submit found spy', () => findSpyFromLogs(t.id, true), isTaskBusy(t.id), 'secondary');
+  addButton(row, isTaskActionBusy(t.id, 'submit') ? 'Submitting...' : (managerAssisted ? 'Submit on behalf' : 'Submit Result'), () => submitSpy(t.id, { managerAssisted }), isTaskBusy(t.id));
   if (ta.value.trim()) updateSpyPreview(t.id);
 }
 
@@ -1967,7 +1988,7 @@ function renderRecentlySubmitted(){
     bd.appendChild(reviewPill);
     const by = document.createElement('div');
     by.className = 'muted';
-    by.textContent = 'by ' + (t.claimedBy || '-') + ' | ' + formatAge(getSubmittedAt(t));
+    by.textContent = 'by ' + (t.claimedBy || '-') + (t.payload?.enteredBy ? ' · entered by ' + t.payload.enteredBy : '') + ' | ' + formatAge(getSubmittedAt(t));
     bd.appendChild(by);
     const pre = document.createElement('div');
     pre.className = 'mono';
@@ -2015,6 +2036,7 @@ function renderReviewCard(t){
     </div>
     <div class="chip-row">
       <span class="pill">Submitted by: ${escapeHtml(t.claimedBy || review.submittedBy || '-')}</span>
+      ${review.enteredBy ? '<span class="pill">Entered by: ' + escapeHtml(review.enteredBy) + '</span>' : ''}
       <span class="pill">Submitted: ${escapeHtml(formatAge(getSubmittedAt(t)))}</span>
     </div>
     ${review.warnings && review.warnings.length ? '<div style="background-color: rgba(255, 193, 7, 0.1); border-left: 3px solid var(--warn); padding: 8px; margin: 8px 0; border-radius: 4px;"><div style="font-weight: 600; color: var(--warn); margin-bottom: 4px;">Reason for Manual Review:</div>' + review.warnings.map(w => '<div>• ' + escapeHtml(w) + '</div>').join('') + '</div>' : ''}
@@ -2493,9 +2515,14 @@ async function unclaim(id){
     setStatus('Unclaim failed: '+String(e.message||e));
   }
 }
-async function submitSpy(id){
-  const employeeName = currentEmployeeName();
-  if(!employeeName){ alert('Sign in with Torn first.'); return; }
+async function submitSpy(id, options){
+  options = options || {};
+  const managerAssisted = !!options.managerAssisted;
+  const employeeName = managerAssisted
+    ? String(qs('#submit-for-' + id)?.value || state.assistedFor[String(id)] || '').trim()
+    : currentEmployeeName();
+  if (managerAssisted && !state.adminVerified) { setStatus('Manager access is required to submit on behalf of a member.'); return; }
+  if(!employeeName){ alert(managerAssisted ? 'Enter the company member who performed the spy.' : 'Sign in with Torn first.'); return; }
   let raw = '';
   let submissionConfirmed = false;
   let submittedTask = null;
@@ -2517,7 +2544,7 @@ async function submitSpy(id){
       p.name || p.id || p.level != null || [p.strength, p.speed, p.dexterity, p.defense, p.total].some(v => v != null)
     );
     if (!hasParsedData) throw new Error('No spy data could be parsed from the pasted text.');
-    if (merged.length !== 1) throw new Error('Multiple targets were detected in the pasted text. Submit one target per claimed task.');
+    if (merged.length !== 1) throw new Error('Multiple targets were detected in the pasted text. Submit one target per task.');
 
     // Exactly one merged target is allowed for a claimed task.
     let p = merged[0] || {};
@@ -2531,10 +2558,10 @@ async function submitSpy(id){
     p = completeStats(Object.assign({}, p, corrected));
     const submitWarnings = [];
     if (task.targetId && p.id && String(task.targetId) !== String(p.id)) {
-      submitWarnings.push('Parsed target ID ' + p.id + ' does not match claimed task ID ' + task.targetId + '.');
+      submitWarnings.push('Parsed target ID ' + p.id + ' does not match task ID ' + task.targetId + '.');
     }
     if (!task.targetId && task.targetName && p.name && normalizeTargetName(task.targetName) !== normalizeTargetName(p.name)) {
-      submitWarnings.push('Parsed target name ' + p.name + ' does not match claimed task ' + task.targetName + '.');
+      submitWarnings.push('Parsed target name ' + p.name + ' does not match task ' + task.targetName + '.');
     }
 
     // Re-kalkuler streng total (i tilfelle)
@@ -2569,9 +2596,11 @@ async function submitSpy(id){
       warnings: submitWarnings.concat(missing.length ? ['Missing: ' + missing.join(', ')] : [])
     };
 
-    const submissionRequest = getOrCreateSubmissionRequestId(id, raw);
-    await call('', 'POST', {
-      action:'submit', id, employee:employeeName,
+    const requestMaterial = managerAssisted ? raw + '\nperformed-by:' + normalizeEmployeeName(employeeName) : raw;
+    const submissionRequest = getOrCreateSubmissionRequestId(id, requestMaterial);
+    const response = await call('', 'POST', {
+      action:managerAssisted ? 'managerSubmit' : 'submit', id, employee:employeeName,
+      performedBy:managerAssisted ? employeeName : '',
       name: payload.name, targetId: payload.targetId, payload,
       requestId: submissionRequest.requestId
     });
@@ -2581,23 +2610,30 @@ async function submitSpy(id){
     ta.value='';
     clearTaskDraft(id);
     task.status = 'submitted';
+    task.claimedBy = response.performedBy || employeeName;
+    if (managerAssisted) task.claimedByTornId = '';
     task.submittedAt = new Date().toISOString();
     task.reviewStatus = 'pending_review';
     state.reviews[taskKey(task)] = {
       status: 'pending_review',
       rawText: raw,
-      submittedBy:employeeName,
+      submittedBy:response.performedBy || employeeName,
+      enteredBy:response.enteredBy || (managerAssisted ? currentEmployeeName() : ''),
+      submissionMode:managerAssisted ? 'manager_assisted' : 'employee',
       submittedAt: new Date().toISOString(),
       warnings: submitWarnings.concat(buildSubmissionWarnings(task, payload)),
       editedPayload: null
     };
     saveReviews();
     if (submitWarnings.length || missing.length) addAuditLog('submission_warning', payload.targetId, submitWarnings.concat(missing.length ? ['Missing: ' + missing.join(', ')] : []).join(' | '));
-    addAuditLog('spy_submitted', payload.targetId, payload.name);
+    addAuditLog(managerAssisted ? 'manager_submitted_for_employee' : 'spy_submitted', payload.targetId, managerAssisted ? employeeName + ' | ' + payload.name : payload.name);
+    if (managerAssisted) delete state.assistedFor[String(id)];
     setTaskBusy(id, false);
     render();
     const refreshSucceeded = await refresh();
-    setStatus(refreshSucceeded ? 'Result submitted.' : 'Result submitted, but the latest queue could not be refreshed. Your submission is saved and the target has been removed from your active claims.');
+    setStatus(refreshSucceeded
+      ? (managerAssisted ? 'Result submitted on behalf of ' + employeeName + '.' : 'Result submitted.')
+      : 'Result submitted, but the latest queue could not be refreshed. Your submission is saved.');
   }catch(e){
     setTaskBusy(id, false);
     if (submissionConfirmed) {
@@ -2789,7 +2825,9 @@ function getReview(target){
     state.reviews[key] = {
       status: target.reviewStatus || target.approvalStatus || 'pending_review',
       rawText: target.rawText || payload.rawText || '',
-      submittedBy: target.claimedBy || '',
+      submittedBy: target.claimedBy || payload.submittedBy || '',
+      enteredBy: payload.enteredBy || '',
+      submissionMode: payload.submissionMode || 'employee',
       warnings: buildSubmissionWarnings(target, payload),
       editedPayload: null
     };

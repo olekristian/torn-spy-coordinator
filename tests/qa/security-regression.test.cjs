@@ -121,6 +121,59 @@ test('Torn ID, not a matching display name, controls target ownership', () => {
   assert.match(denied.error, /Forbidden/);
 });
 
+test('manager-assisted submission separates performer from entering manager', () => {
+  const h = createHarness({ properties:{ ADMIN_ACTOR:'Manager A' } });
+  h.append('Targets', target({ status:'open', claimedBy:'', claimedByTornId:'', assignedTo:'Employee B' }));
+  const payload = {
+    name:'QA Target', targetId:'100001', rawText:'spy data', level:10,
+    strength:1, speed:2, dexterity:3, defense:4, total:10, formatted:'formatted', warnings:[],
+  };
+  const submitted = h.request({
+    action:'managerSubmit', key:'employee-key', admin:'admin-key', id:'target-1',
+    performedBy:'Employee B', payload, requestId:'manager-submit-1',
+  });
+  assert.equal(submitted.ok, true);
+  assert.equal(submitted.performedBy, 'Employee B');
+  assert.equal(submitted.enteredBy, 'Employee A');
+  assert.equal(h.rows('Targets')[0].claimedBy, 'Employee B');
+  assert.equal(h.rows('Targets')[0].status, 'submitted');
+  const submission = h.rows('Submissions')[0];
+  assert.equal(submission.submittedBy, 'Employee B');
+  assert.equal(submission.enteredBy, 'Employee A');
+  assert.equal(submission.submissionMode, 'manager_assisted');
+  assert.equal(h.rows('AuditLog').some(row => row.action === 'manager_submitted_for_employee' && row.actor === 'Employee A'), true);
+  const retried = h.request({
+    action:'managerSubmit', key:'employee-key', admin:'admin-key', id:'target-1',
+    performedBy:'Employee B', payload, requestId:'manager-submit-1',
+  });
+  assert.equal(retried.ok, true);
+  assert.equal(retried.duplicate, true);
+  assert.equal(h.rows('Submissions').length, 1);
+  assert.equal(h.rows('AuditLog').filter(row => row.operationId === 'manager-submit-1').length, 1);
+});
+
+test('manager-assisted submission requires admin access and respects assignment', () => {
+  const payload = { name:'QA Target', targetId:'100001', rawText:'spy data', formatted:'formatted' };
+  const unauthorized = createHarness();
+  unauthorized.append('Targets', target({ status:'open', claimedBy:'', assignedTo:'Employee B' }));
+  const denied = unauthorized.request({
+    action:'managerSubmit', key:'employee-key', id:'target-1', performedBy:'Employee B', payload, requestId:'manager-submit-denied',
+  });
+  assert.equal(denied.ok, false);
+  assert.match(denied.error, /Admin key required/);
+  assert.equal(unauthorized.rows('Submissions').length, 0);
+
+  const mismatch = createHarness();
+  mismatch.append('Targets', target({ status:'open', claimedBy:'', assignedTo:'Employee B' }));
+  const conflicted = mismatch.request({
+    action:'managerSubmit', key:'employee-key', admin:'admin-key', id:'target-1',
+    performedBy:'Employee C', payload, requestId:'manager-submit-conflict',
+  });
+  assert.equal(conflicted.ok, false);
+  assert.match(conflicted.error, /assigned to Employee B/);
+  assert.equal(mismatch.rows('Submissions').length, 0);
+});
+
 test('backend rejects credentials supplied in URL query', () => {
   const h = createHarness();
   const response = h.request({ action: 'list', key: 'employee-key' }, 'GET');

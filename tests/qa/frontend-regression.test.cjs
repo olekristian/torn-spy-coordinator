@@ -136,8 +136,18 @@ test('employee spy drafts survive redraws and same-tab mobile reloads', () => {
   assert.doesNotMatch(html.slice(saveStart, saveEnd), /state\.pastes\s*=\s*\{\}/);
 });
 
+test('manager-assisted submission records performer separately from entering manager', () => {
+  assert.match(html, /Submit on behalf of a company member/);
+  assert.match(html, /action:managerAssisted \? 'managerSubmit' : 'submit'/);
+  assert.match(html, /performedBy:managerAssisted \? employeeName : ''/);
+  assert.match(html, /Entered by:/);
+  assert.match(backend, /submissionMode:\s*managerAssisted \? 'manager_assisted' : 'employee'/);
+  assert.match(backend, /manager_submitted_for_employee/);
+  assert.match(backend, /requireAdmin_\(input\)/);
+});
+
 test('confirmed submission leaves active claims even when refresh fails', () => {
-  const start = html.indexOf('async function submitSpy(id)');
+  const start = html.indexOf('async function submitSpy(id, options)');
   const end = html.indexOf('\n\nfunction parseImportTarget', start);
   const source = html.slice(start, end);
   assert.match(source, /submissionConfirmed = true/);

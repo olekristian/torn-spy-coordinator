@@ -22,6 +22,10 @@ The raw Torn key is not written to Sheets or Script Properties. It is sent to Ap
 
 Employees should use a narrowly scoped Custom key and must not use a Full Access key. Sign-in explicitly requests `key → info` and `user → profile`; key info verifies Torn ID and company membership. Optional report lookup additionally requires `user → reports`. Signing out removes the key and employee session from that browser session.
 
+### Manager-assisted submissions
+
+An authenticated manager can open a target card, expand **Submit on behalf of a company member**, enter the member's canonical display name, paste and review the spy result, and submit it. Existing target assignments or claims must match the selected member. The submission records the member in `submittedBy` for work and payout attribution, while `enteredBy` and `submissionMode=manager_assisted` preserve who entered it and how. The audit log records `manager_submitted_for_employee`; managers should never use or request another member's API key.
+
 ### Legacy employee codes (optional fallback)
 
 `EMPLOYEE_ACCESS_MAP` must be a JSON object mapping each employee's private access code to their canonical display name. The shared `API_KEY` is read-only for employee actions; claiming, releasing, and submitting require a mapped personal code. Example:

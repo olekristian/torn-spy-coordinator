@@ -11,7 +11,7 @@ function _employeeAccessMap_(){
     throw new Error('EMPLOYEE_ACCESS_MAP is not valid JSON.');
   }
 }
-const BACKEND_VERSION = '2026-08-06-torn-auth-v4';
+const BACKEND_VERSION = '2026-08-06-manager-assisted-submit-v1';
 const TORN_API_V2_BASE = 'https://api.torn.com/v2';
 const DEFAULT_TORN_SESSION_HOURS = 8;
 const MANAGER_WEBHOOK_KEYS = ['MANAGER_DISCORD_WEBHOOK_URL','DISCORD_MANAGER_WEBHOOK_URL','MANAGER_WEBHOOK_URL','DISCORD_WEBHOOK_URL'];
@@ -37,7 +37,7 @@ const SHEETS = {
 
 const HEADERS = {
   Targets: ['id','targetName','targetId','level','notes','priority','status','claimedBy','claimedByTornId','claimedAt','submittedAt','reviewStatus','assignedTo','assignedAt','orderId','customer','pricePerSpy','employeeRate','customerPaymentStatus','employeePayoutStatus','createdAt','updatedAt','version','lastOperationId'],
-  Submissions: ['id','targetRowId','targetName','targetId','submittedBy','submittedByTornId','submittedAt','rawText','level','strength','speed','dexterity','defense','total','formatted','reviewStatus','reviewedBy','reviewedAt','warnings','updatedAt','requestId','version','reviewOperationId'],
+  Submissions: ['id','targetRowId','targetName','targetId','submittedBy','submittedByTornId','enteredBy','enteredByTornId','submissionMode','submittedAt','rawText','level','strength','speed','dexterity','defense','total','formatted','reviewStatus','reviewedBy','reviewedAt','warnings','updatedAt','requestId','version','reviewOperationId'],
   Orders: ['orderId','customer','requestedBy','orderedAt','targetCount','pricePerSpy','totalPrice','paymentStatus','employeePayoutStatus','newOrderNotifiedAt','newOrderNotificationStatus','completedAt','completionNotifiedAt','completionNotificationStatus','orderStatus','paymentRequired','paymentConfirmedAt','paymentConfirmedBy','paymentType','deliveryMode','autoDeliver','customerDeliveryConfigured','deliveredAt','deliveryStatus','deliveryError','notes','createdAt','updatedAt','cancelledAt','cancelledBy','cancelReason','cancelOperationId'],
   Customers: ['customer','contact','notes','createdAt','updatedAt'],
   Employees: ['displayName','payoutHandle','defaultRate','notes','createdAt','updatedAt'],
@@ -83,6 +83,7 @@ function dispatch_(action, input) {
   if (action === 'claim') return claimTarget_(input);
   if (action === 'unclaim') return unclaimTarget_(input);
   if (action === 'submit') return submitSpy_(input);
+  if (action === 'managerSubmit') return submitSpy_(input);
   if (action === 'review') return reviewSubmission_(input);
   if (action === 'assign') return assignTarget_(input);
   if (action === 'customerPayment') return recordCustomerPayment_(input);
@@ -113,7 +114,7 @@ function version_() {
     ok: true,
     version: BACKEND_VERSION,
     checkedAt: now_(),
-    actions: ['authenticateTorn','version','list','customerPayment','voidCustomerPayment','employeePayout','voidEmployeePayout','setOrderPrice','webhookDebug','testDiscordWebhook','sendNewOrderNotification','sendOrderCompleteNotification','setOrderAutomation','recordTornMoneyPayment','sendCustomerDelivery','markOrderDelivered','cancelOrder','getAutomationDiagnostics','reconcileOutbox','retryOutboxEvent']
+    actions: ['authenticateTorn','version','list','managerSubmit','customerPayment','voidCustomerPayment','employeePayout','voidEmployeePayout','setOrderPrice','webhookDebug','testDiscordWebhook','sendNewOrderNotification','sendOrderCompleteNotification','setOrderAutomation','recordTornMoneyPayment','sendCustomerDelivery','markOrderDelivered','cancelOrder','getAutomationDiagnostics','reconcileOutbox','retryOutboxEvent']
   };
 }
 
@@ -408,7 +409,12 @@ function unclaimTarget_(input) {
 }
 
 function submitSpy_(input) {
-  const actor = canonicalActor_(input);
+  const managerAssisted = String(input.action || '') === 'managerSubmit';
+  if (managerAssisted) requireAdmin_(input);
+  const enteredBy = managerAssisted ? canonicalActor_(input) : '';
+  const enteredByTornId = managerAssisted ? String(input._tornId || '') : '';
+  const actor = managerAssisted ? String(input.performedBy || '').trim() : canonicalActor_(input);
+  if (managerAssisted && !actor) throw new Error('The company member who performed the spy is required.');
   const payload = input.payload || {};
   const warnings = Array.isArray(payload.warnings) ? payload.warnings.join(' | ') : (payload.warnings || '');
   const requestId = String(input.requestId || '').trim();
@@ -419,11 +425,14 @@ function submitSpy_(input) {
     if (existing) {
       if (String(existing.targetRowId || '') !== String(input.id || '') ||
           !sameActorName_(existing.submittedBy, actor) ||
+          (managerAssisted && (!sameActorName_(existing.enteredBy, enteredBy) || String(existing.submissionMode || '') !== 'manager_assisted')) ||
           !submissionMatchesInput_(existing, input, payload)) {
         throw new Error('Conflict: requestId was already used for another submission.');
       }
       const repaired = updateTarget_(input.id, row => {
         row.status = 'submitted';
+        row.claimedBy = actor;
+        row.claimedByTornId = String(existing.submittedByTornId || '');
         row.submittedAt = existing.submittedAt || row.submittedAt || now_();
         row.reviewStatus = existing.reviewStatus || 'pending_review';
         row.lastOperationId = requestId;
@@ -431,13 +440,22 @@ function submitSpy_(input) {
         targetOrderId = row.orderId || '';
         return row;
       });
-      ensureAuditOnce_(requestId, actor, 'spy_submitted', repaired.targetId, repaired.targetName);
-      return { ok:true, duplicate:true, submissionId:existing.id };
+      ensureAuditOnce_(requestId, managerAssisted ? enteredBy : actor, managerAssisted ? 'manager_submitted_for_employee' : 'spy_submitted', repaired.targetId, managerAssisted ? actor + ' | ' + repaired.targetName : repaired.targetName);
+      return { ok:true, duplicate:true, submissionId:existing.id, performedBy:actor, enteredBy:managerAssisted ? enteredBy : '' };
     }
     const now = now_();
     const target = getTargetById_(input.id);
-    if (String(target.status || '') !== 'claimed') throw new Error('Conflict: target is not currently claimed.');
-    if (!actorOwnsTarget_(target, input, actor)) throw new Error('Forbidden: target is claimed by another employee.');
+    if (managerAssisted) {
+      if (['submitted','cancelled'].indexOf(String(target.status || 'open')) !== -1) throw new Error('Conflict: target cannot accept another submission.');
+      if (target.claimedBy && !sameActorName_(target.claimedBy, actor)) throw new Error('Conflict: target is claimed by ' + target.claimedBy + ', not ' + actor + '.');
+      if (!target.claimedBy && target.assignedTo && !sameActorName_(target.assignedTo, actor)) throw new Error('Conflict: target is assigned to ' + target.assignedTo + ', not ' + actor + '.');
+    } else {
+      if (String(target.status || '') !== 'claimed') throw new Error('Conflict: target is not currently claimed.');
+      if (!actorOwnsTarget_(target, input, actor)) throw new Error('Forbidden: target is claimed by another employee.');
+    }
+    const performedByTornId = managerAssisted
+      ? (sameActorName_(target.claimedBy, actor) ? String(target.claimedByTornId || '') : '')
+      : String(input._tornId || '');
     const submissionId = uid_('sub');
     appendObject_(SHEETS.submissions, {
       id: submissionId,
@@ -445,7 +463,10 @@ function submitSpy_(input) {
       targetName: input.name || target.targetName || payload.name || '',
       targetId: input.targetId || target.targetId || payload.targetId || '',
       submittedBy: actor,
-      submittedByTornId: input._tornId || '',
+      submittedByTornId: performedByTornId,
+      enteredBy: managerAssisted ? enteredBy : '',
+      enteredByTornId: enteredByTornId,
+      submissionMode: managerAssisted ? 'manager_assisted' : 'employee',
       submittedAt: now,
       rawText: payload.rawText || input.rawText || '',
       level: payload.level || '',
@@ -465,6 +486,8 @@ function submitSpy_(input) {
     });
     const updated = updateTarget_(input.id, row => {
       row.status = 'submitted';
+      row.claimedBy = actor;
+      row.claimedByTornId = performedByTornId;
       row.submittedAt = now;
       row.reviewStatus = 'pending_review';
       row.lastOperationId = requestId;
@@ -472,8 +495,8 @@ function submitSpy_(input) {
       return row;
     });
     targetOrderId = target.orderId || '';
-    addAudit_(actor, 'spy_submitted', updated.targetId, updated.targetName, requestId);
-    return { ok:true, submissionId };
+    addAudit_(managerAssisted ? enteredBy : actor, managerAssisted ? 'manager_submitted_for_employee' : 'spy_submitted', updated.targetId, managerAssisted ? actor + ' | ' + updated.targetName : updated.targetName, requestId);
+    return { ok:true, submissionId, performedBy:actor, enteredBy:managerAssisted ? enteredBy : '' };
   });
   autoSendOrderCompletionIfReady_(targetOrderId, actor);
   return result;
@@ -878,6 +901,11 @@ function latestPayloadForTarget_(targetRowId) {
     total: numOrBlank_(r.total),
     rawText: r.rawText,
     formatted: r.formatted,
+    submittedBy: r.submittedBy,
+    submittedByTornId: r.submittedByTornId,
+    enteredBy: r.enteredBy,
+    enteredByTornId: r.enteredByTornId,
+    submissionMode: r.submissionMode || 'employee',
   };
 }
 
