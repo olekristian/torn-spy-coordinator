@@ -46,6 +46,25 @@ test('manager review sends explicit submission version and stable operation ID',
   assert.doesNotMatch(html.slice(reconcileStart, reconcileEnd), /await call\(/);
 });
 
+test('clean spy submissions auto-approve while suspicious submissions show reasons', () => {
+  assert.match(backend, /const reviewStatus = reviewWarnings\.length \? 'pending_review' : 'approved'/);
+  assert.match(backend, /function submissionReviewWarnings_/);
+  assert.match(backend, /function reportedTotalFromRaw_/);
+  assert.match(html, /Reason for Manual Review:/);
+  assert.match(html, /function getReportedTotal\(/);
+  assert.match(html, /id="approve-all-clean"/);
+  assert.match(html, /function approveAllCleanSubmissions\(/);
+});
+
+test('employee payouts can settle an employee per order without manual target IDs', () => {
+  assert.match(html, /id="ledger-payout-order"/);
+  assert.match(html, /id="pay-employee-order-full"/);
+  assert.match(html, /function payEmployeeOrderInFull\(/);
+  assert.match(html, /action['"],?\s*['"]employeeOrderPayout|syncLedgerAction\('employeeOrderPayout'/);
+  assert.match(backend, /function recordEmployeeOrderPayout_/);
+  assert.match(backend, /sameActorName_\(target\.claimedBy, employeeName\)/);
+});
+
 test('manager can cancel an order with a stable request ID and explicit warning', () => {
   assert.match(html, /async function cancelOrder\(orderId\)/);
   assert.match(html, /action:'cancelOrder'/);

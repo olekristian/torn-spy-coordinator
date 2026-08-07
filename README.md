@@ -59,6 +59,10 @@ The script creates these tabs automatically:
 - `DeliveryHistory`
 - `Outbox`
 
+## Paying an employee for an order
+
+In **Manager → Payments**, use **Pay employee in full for order** when settling all of one employee's approved work in an order. Enter the employee display name and Order ID; the backend finds the matching approved submissions, calculates each target's remaining employee rate, and records the payout against those targets. Existing paid amounts are deducted and queued amounts are converted to paid, so managers do not need to look up target IDs. The single-target payout action remains available for corrections and partial payments.
+
 ## Cancelling an order
 
 Verified managers can cancel an active order from the Manager order card.

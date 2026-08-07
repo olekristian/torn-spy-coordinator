@@ -11,7 +11,7 @@ function _employeeAccessMap_(){
     throw new Error('EMPLOYEE_ACCESS_MAP is not valid JSON.');
   }
 }
-const BACKEND_VERSION = '2026-08-06-manager-assisted-submit-v1';
+const BACKEND_VERSION = '2026-08-07-order-payout-v1';
 const TORN_API_V2_BASE = 'https://api.torn.com/v2';
 const DEFAULT_TORN_SESSION_HOURS = 8;
 const MANAGER_WEBHOOK_KEYS = ['MANAGER_DISCORD_WEBHOOK_URL','DISCORD_MANAGER_WEBHOOK_URL','MANAGER_WEBHOOK_URL','DISCORD_WEBHOOK_URL'];
@@ -89,6 +89,7 @@ function dispatch_(action, input) {
   if (action === 'customerPayment') return recordCustomerPayment_(input);
   if (action === 'voidCustomerPayment') return voidCustomerPayment_(input);
   if (action === 'employeePayout') return recordEmployeePayout_(input);
+  if (action === 'employeeOrderPayout') return recordEmployeeOrderPayout_(input);
   if (action === 'voidEmployeePayout') return voidEmployeePayout_(input);
   if (action === 'history') return archiveHistory_(input);
   if (action === 'verifyAdmin') return verifyAdmin_(input);
@@ -114,7 +115,7 @@ function version_() {
     ok: true,
     version: BACKEND_VERSION,
     checkedAt: now_(),
-    actions: ['authenticateTorn','version','list','managerSubmit','customerPayment','voidCustomerPayment','employeePayout','voidEmployeePayout','setOrderPrice','webhookDebug','testDiscordWebhook','sendNewOrderNotification','sendOrderCompleteNotification','setOrderAutomation','recordTornMoneyPayment','sendCustomerDelivery','markOrderDelivered','cancelOrder','getAutomationDiagnostics','reconcileOutbox','retryOutboxEvent']
+    actions: ['authenticateTorn','version','list','managerSubmit','customerPayment','voidCustomerPayment','employeePayout','employeeOrderPayout','voidEmployeePayout','setOrderPrice','webhookDebug','testDiscordWebhook','sendNewOrderNotification','sendOrderCompleteNotification','setOrderAutomation','recordTornMoneyPayment','sendCustomerDelivery','markOrderDelivered','cancelOrder','getAutomationDiagnostics','reconcileOutbox','retryOutboxEvent']
   };
 }
 
@@ -416,7 +417,6 @@ function submitSpy_(input) {
   const actor = managerAssisted ? String(input.performedBy || '').trim() : canonicalActor_(input);
   if (managerAssisted && !actor) throw new Error('The company member who performed the spy is required.');
   const payload = input.payload || {};
-  const warnings = Array.isArray(payload.warnings) ? payload.warnings.join(' | ') : (payload.warnings || '');
   const requestId = String(input.requestId || '').trim();
   if (!requestId) throw new Error('requestId is required for submissions.');
   let targetOrderId = '';
@@ -441,7 +441,15 @@ function submitSpy_(input) {
         return row;
       });
       ensureAuditOnce_(requestId, managerAssisted ? enteredBy : actor, managerAssisted ? 'manager_submitted_for_employee' : 'spy_submitted', repaired.targetId, managerAssisted ? actor + ' | ' + repaired.targetName : repaired.targetName);
-      return { ok:true, duplicate:true, submissionId:existing.id, performedBy:actor, enteredBy:managerAssisted ? enteredBy : '' };
+      return {
+        ok:true,
+        duplicate:true,
+        submissionId:existing.id,
+        performedBy:actor,
+        enteredBy:managerAssisted ? enteredBy : '',
+        reviewStatus:existing.reviewStatus || 'pending_review',
+        warnings:String(existing.warnings || '').split('|').map(value => value.trim()).filter(Boolean),
+      };
     }
     const now = now_();
     const target = getTargetById_(input.id);
@@ -456,6 +464,9 @@ function submitSpy_(input) {
     const performedByTornId = managerAssisted
       ? (sameActorName_(target.claimedBy, actor) ? String(target.claimedByTornId || '') : '')
       : String(input._tornId || '');
+    const reviewWarnings = submissionReviewWarnings_(target, payload);
+    const reviewStatus = reviewWarnings.length ? 'pending_review' : 'approved';
+    const warnings = reviewWarnings.join(' | ');
     const submissionId = uid_('sub');
     appendObject_(SHEETS.submissions, {
       id: submissionId,
@@ -476,9 +487,9 @@ function submitSpy_(input) {
       defense: payload.defense || '',
       total: payload.total || '',
       formatted: payload.formatted || '',
-      reviewStatus: 'pending_review',
-      reviewedBy: '',
-      reviewedAt: '',
+      reviewStatus: reviewStatus,
+      reviewedBy: reviewStatus === 'approved' ? 'automatic validation' : '',
+      reviewedAt: reviewStatus === 'approved' ? now : '',
       warnings: warnings,
       updatedAt: now,
       requestId: requestId,
@@ -489,17 +500,77 @@ function submitSpy_(input) {
       row.claimedBy = actor;
       row.claimedByTornId = performedByTornId;
       row.submittedAt = now;
-      row.reviewStatus = 'pending_review';
+      row.reviewStatus = reviewStatus;
       row.lastOperationId = requestId;
       row.updatedAt = now;
       return row;
     });
     targetOrderId = target.orderId || '';
     addAudit_(managerAssisted ? enteredBy : actor, managerAssisted ? 'manager_submitted_for_employee' : 'spy_submitted', updated.targetId, managerAssisted ? actor + ' | ' + updated.targetName : updated.targetName, requestId);
-    return { ok:true, submissionId, performedBy:actor, enteredBy:managerAssisted ? enteredBy : '' };
+    if (reviewStatus === 'approved') addAudit_('automatic validation', 'spy_auto_approved', updated.targetId, updated.targetName, requestId + ':auto-review');
+    return { ok:true, submissionId, performedBy:actor, enteredBy:managerAssisted ? enteredBy : '', reviewStatus:reviewStatus, warnings:reviewWarnings };
   });
   autoSendOrderCompletionIfReady_(targetOrderId, actor);
   return result;
+}
+
+function submissionReviewWarnings_(target, payload) {
+  const warnings = [];
+  const add = message => { if (message && warnings.indexOf(message) === -1) warnings.push(message); };
+  const p = payload || {};
+  const labels = ['Strength','Speed','Dexterity','Defense'];
+  const values = [p.strength,p.speed,p.dexterity,p.defense];
+  const missing = labels.filter((_, index) => p[['strength','speed','dexterity','defense'][index]] === '' || p[['strength','speed','dexterity','defense'][index]] == null || !Number.isFinite(Number(values[index])));
+  if (missing.length) add('Missing stats: ' + missing.join(', ') + '.');
+  if (!missing.length) {
+    const sum = values.reduce((total, value) => total + Number(value), 0);
+    if (p.total === '' || p.total == null || !Number.isFinite(Number(p.total))) add('Total is missing.');
+    else if (Number(p.total) !== sum) add('Total does not match stat sum.');
+    const reportedTotal = reportedTotalFromRaw_(p.rawText);
+    if (reportedTotal != null && reportedTotal !== sum) {
+      add('Pasted total (' + reportedTotal.toLocaleString('en-US') + ') differs from the four-stat sum (' + sum.toLocaleString('en-US') + ').');
+    }
+  }
+  reportedStatWarningsFromRaw_(p.rawText, p).forEach(add);
+  if (target.targetId && p.targetId && String(target.targetId) !== String(p.targetId)) add('Pasted target ID does not match card target ID.');
+  if (!p.targetId) add('Target ID is missing.');
+  if (p.level === '' || p.level == null || !Number.isFinite(Number(p.level))) add('Level is missing.');
+  const clientWarnings = Array.isArray(p.warnings) ? p.warnings : String(p.warnings || '').split('|');
+  clientWarnings.map(value => String(value || '').trim()).filter(Boolean).forEach(add);
+  return warnings;
+}
+
+function reportedStatWarningsFromRaw_(rawText, payload) {
+  const warnings = [];
+  const fields = [
+    ['Strength','strength','strength|str'],
+    ['Speed','speed','speed|spd|sp'],
+    ['Dexterity','dexterity','dexterity|dex'],
+    ['Defense','defense','defense|defence|def'],
+  ];
+  fields.forEach(item => {
+    const match = String(rawText || '').match(new RegExp('(?:^|\\n)\\s*(?:' + item[2] + ')\\s*[:=\\-]\\s*([^\\n\\r]+)', 'i'));
+    if (!match) return;
+    const token = String(match[1] || '').trim();
+    const reported = parseReportedNumber_(token);
+    if (reported == null) warnings.push('Pasted ' + item[0] + ' value could not be parsed ("' + token + '"); verify the inferred or corrected value.');
+    else if (payload[item[1]] != null && payload[item[1]] !== '' && Number(payload[item[1]]) !== reported) warnings.push('Pasted ' + item[0] + ' differs from the submitted value.');
+  });
+  return warnings;
+}
+
+function parseReportedNumber_(token) {
+  const text = String(token || '').trim();
+  if (/^\d+$/.test(text)) return Number(text);
+  if (/^\d{1,3}(?:[,\. ]\d{3})+$/.test(text)) return Number(text.replace(/[,\. ]/g, ''));
+  return null;
+}
+
+function reportedTotalFromRaw_(rawText) {
+  const match = String(rawText || '').match(/(?:^|\n)\s*(?:total battle stats|total stats|total|sum)\s*[:=\-]\s*([^\n\r]+)/i);
+  if (!match) return null;
+  const token = String(match[1] || '').trim();
+  return parseReportedNumber_(token);
 }
 
 function ensureAuditOnce_(operationId, actor, action, targetId, details) {
@@ -735,6 +806,93 @@ function recordEmployeePayout_(input) {
     reconcileTargetPayout_(input.targetRowId);
     addAudit_(actor, 'employee_payout_' + (input.status || 'paid'), input.targetId || '', input.employeeName || '', requestId);
     return { ok:true, payoutId:payoutId, amount:amount };
+  });
+}
+
+function recordEmployeeOrderPayout_(input) {
+  requireAdmin_(input);
+  const requestId = String(input.requestId || '').trim();
+  const orderId = String(input.orderId || '').trim();
+  const employeeName = String(input.employeeName || '').trim();
+  if (!requestId) throw new Error('requestId is required for order payouts.');
+  if (!orderId) throw new Error('Order ID is required for a full-order payout.');
+  if (!employeeName) throw new Error('Employee display name is required for a full-order payout.');
+  const actor = adminActor_();
+  return withScriptLock_(() => {
+    assertOrderNotCancelled_(orderId);
+    const auditRows = readObjects_(SHEETS.auditLog);
+    const completed = auditRows.find(row => String(row.operationId || '') === requestId && String(row.action || '') === 'employee_order_payout_paid');
+    if (completed) {
+      const parts = String(completed.details || '').split('|').map(value => value.trim());
+      return { ok:true, duplicate:true, orderId:orderId, employeeName:employeeName, amount:num_(parts[1]), targetCount:num_(parts[2]) };
+    }
+
+    const targets = readObjects_(SHEETS.targets).filter(target =>
+      String(target.orderId || '') === orderId &&
+      String(target.status || '') === 'submitted' &&
+      String(target.reviewStatus || '') === 'approved' &&
+      sameActorName_(target.claimedBy, employeeName)
+    );
+    if (!targets.length) throw new Error('No approved submitted targets for ' + employeeName + ' were found in order ' + orderId + '.');
+
+    const submissions = readObjects_(SHEETS.submissions);
+    const submissionByTarget = {};
+    submissions.forEach(submission => {
+      if (String(submission.reviewStatus || '') === 'approved') submissionByTarget[String(submission.targetRowId || '')] = submission;
+    });
+    let payouts = readObjectsWithRows_(SHEETS.employeePayouts);
+    const marker = 'order-payout:' + requestId;
+    const touchedTargetIds = {};
+
+    targets.forEach(target => {
+      const submission = submissionByTarget[String(target.id || '')];
+      const due = num_(target.employeeRate);
+      if (!submission || due <= 0) return;
+      const active = payouts.filter(row => String(row.targetRowId || '') === String(target.id || '') && String(row.status || '').toLowerCase() !== 'voided');
+      const paid = active.filter(row => String(row.status || '').toLowerCase() === 'paid').reduce((sum, row) => sum + num_(row.amount), 0);
+      if (paid >= due) return;
+      const queued = active.filter(row => String(row.status || '').toLowerCase() === 'queued');
+      queued.forEach(row => {
+        const note = [String(row.note || '').trim(), marker].filter(Boolean).join(' | ');
+        writeObjectAtRow_(sheet_(SHEETS.employeePayouts), row._row, { status:'paid', reference:input.reference || row.reference || '', note:note });
+        touchedTargetIds[String(target.id)] = true;
+      });
+      const queuedAmount = queued.reduce((sum, row) => sum + num_(row.amount), 0);
+      const remaining = Math.max(0, due - paid - queuedAmount);
+      if (remaining > 0) {
+        appendObject_(SHEETS.employeePayouts, {
+          id: uid_('emppay'),
+          submissionId: submission.id,
+          targetRowId: target.id,
+          employee: target.claimedBy || employeeName,
+          targetId: target.targetId || '',
+          amount: remaining,
+          status: 'paid',
+          reference: input.reference || '',
+          note: marker,
+          recordedBy: actor,
+          recordedAt: now_(),
+          requestId: requestId + ':' + target.id,
+          voidedAt: '',
+          voidedBy: '',
+          voidReason: '',
+        });
+        touchedTargetIds[String(target.id)] = true;
+      }
+      payouts = readObjectsWithRows_(SHEETS.employeePayouts);
+    });
+
+    const batchRows = readObjects_(SHEETS.employeePayouts).filter(row =>
+      String(row.requestId || '').indexOf(requestId + ':') === 0 || String(row.note || '').indexOf(marker) !== -1
+    );
+    if (!batchRows.length) throw new Error('This employee has no unpaid approved work in order ' + orderId + '.');
+    const amount = batchRows.reduce((sum, row) => sum + num_(row.amount), 0);
+    const targetIds = {};
+    batchRows.forEach(row => { if (row.targetRowId) targetIds[String(row.targetRowId)] = true; });
+    Object.keys(touchedTargetIds).forEach(reconcileTargetPayout_);
+    const targetCount = Object.keys(targetIds).length;
+    ensureAuditOnce_(requestId, actor, 'employee_order_payout_paid', orderId, employeeName + ' | ' + amount + ' | ' + targetCount);
+    return { ok:true, orderId:orderId, employeeName:employeeName, amount:amount, targetCount:targetCount, payoutCount:batchRows.length };
   });
 }
 

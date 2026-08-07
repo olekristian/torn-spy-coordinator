@@ -610,8 +610,9 @@ body:not(.is-admin) .manager-only { display:none !important; }
         <div class="hd">Manager Review Queue</div>
         <div class="bd">
           <div class="row" style="margin-bottom:10px">
+            <button id="approve-all-clean">Approve all clean</button>
             <button id="release-all-stale">Release all stale claims</button>
-            <span class="muted">Review data and manager edits are stored locally in this browser.</span>
+            <span class="muted">Only submissions with a validation reason require review. Unsaved manager edits stay in this browser.</span>
           </div>
           <div id="review-queue" class="grid"></div>
         </div>
@@ -676,6 +677,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
           </div>
           <div class="filters">
             <input id="ledger-employee" placeholder="Employee display name">
+            <input id="ledger-payout-order" placeholder="Order ID">
             <input id="ledger-target-id" placeholder="Target ID">
             <input id="ledger-employee-amount" type="number" min="0" step="1" placeholder="Employee payout amount">
             <select id="ledger-employee-status">
@@ -685,6 +687,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
             </select>
             <input id="ledger-payout-ref" placeholder="Payout reference / note">
             <button id="record-employee-payout">Record employee payout</button>
+            <button id="pay-employee-order-full">Pay employee in full for order</button>
           </div>
           <div id="ledger-summary" class="table-wrap"></div>
         </div>
@@ -717,7 +720,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
 
 <script>
 const DEFAULT_API = "https://script.google.com/macros/s/AKfycbwmvn4x0wmHDllT-IYWINU1OI-DG9Hdk_sEhZUQKmsqJA16y9yOOnAHjJ6NGIqI9WTQ/exec";
-const APP_FRONTEND_VERSION = "2026-08-06-manager-assisted-submit-v1";
+const APP_FRONTEND_VERSION = "2026-08-07-order-payout-v1";
 const DEFAULT_KEY = "";
 const STALE_WARNING_MINUTES = 30;
 const STALE_DANGER_MINUTES = 60;
@@ -2116,7 +2119,7 @@ function renderLedger(){
     ['Estimated net after recorded payouts', collected - paidOut]
   ];
   const payoutTable = payoutRows.length
-    ? `<table style="margin-top:12px"><thead><tr><th>Employee</th><th>Owed</th><th>Status</th><th>Suggested action</th></tr></thead><tbody>${payoutRows.map(row => `<tr><td>${escapeHtml(row.employee)}</td><td>${Number(row.owed || 0).toLocaleString()}</td><td>${escapeHtml(row.status)}</td><td><button class="ledger-suggest" data-employee="${escapeHtml(row.employee)}" data-amount="${escapeHtml(String(row.owed))}">Suggest full payout</button></td></tr>`).join('')}</tbody></table>`
+    ? `<table style="margin-top:12px"><thead><tr><th>Employee</th><th>Order</th><th>Owed</th><th>Status</th><th>Suggested action</th></tr></thead><tbody>${payoutRows.map(row => `<tr><td>${escapeHtml(row.employee)}</td><td>${escapeHtml(row.orderId)}</td><td>${Number(row.owed || 0).toLocaleString()}</td><td>${escapeHtml(row.status)}</td><td><button class="ledger-suggest" data-employee="${escapeHtml(row.employee)}" data-order-id="${escapeHtml(row.orderId)}" data-amount="${escapeHtml(String(row.owed))}">Load full order payout</button></td></tr>`).join('')}</tbody></table>`
     : '<div class="muted" style="margin-top:12px">No unpaid employee balances found.</div>';
   const paymentRows = state.customerPayments.slice().reverse().slice(0, 20);
   const paymentTable = paymentRows.length
@@ -2141,28 +2144,23 @@ function getEmployeePayoutSuggestions(){
     .filter(t => t.status === 'submitted' && String(t.reviewStatus || 'pending_review') === 'approved')
     .forEach(task => {
       const employeeRaw = String(task.claimedBy || '').trim();
-      if (!employeeRaw) return;
+      const orderId = String(task.orderId || '').trim();
+      if (!employeeRaw || !orderId) return;
       const employeeKey = normalizeEmployeeName(employeeRaw);
       if (!employeeKey) return;
-      if (!due[employeeKey]) due[employeeKey] = { displayName: employeeRaw, amount: 0 };
-      due[employeeKey].amount += Number(task.employeeRate || 0);
+      const key = orderId + '|' + employeeKey;
+      if (!due[key]) due[key] = { displayName: employeeRaw, orderId, amount: 0 };
+      const paid = state.employeePayouts
+        .filter(row => String(row.targetRowId || '') === String(task.id || '') && String(row.status || '').toLowerCase() === 'paid')
+        .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+      due[key].amount += Math.max(0, Number(task.employeeRate || 0) - paid);
     });
-
-  const paid = {};
-  state.employeePayouts
-    .filter(row => String(row.status || '').toLowerCase() === 'paid')
-    .forEach(row => {
-      const employeeRaw = String(row.employee || '').trim();
-      const employeeKey = normalizeEmployeeName(employeeRaw);
-      if (!employeeKey) return;
-      paid[employeeKey] = (paid[employeeKey] || 0) + Number(row.amount || 0);
-    });
-
   return Object.keys(due)
-    .map(employeeKey => {
-      const owed = Math.max(0, Number(due[employeeKey].amount || 0) - Number(paid[employeeKey] || 0));
+    .map(key => {
+      const owed = Math.max(0, Number(due[key].amount || 0));
       return {
-        employee: due[employeeKey].displayName,
+        employee: due[key].displayName,
+        orderId: due[key].orderId,
         owed,
         status: owed > 0 ? 'You owe this employee' : 'Settled'
       };
@@ -2613,15 +2611,19 @@ async function submitSpy(id, options){
     task.claimedBy = response.performedBy || employeeName;
     if (managerAssisted) task.claimedByTornId = '';
     task.submittedAt = new Date().toISOString();
-    task.reviewStatus = 'pending_review';
+    const submittedReviewStatus = response.reviewStatus || 'pending_review';
+    const submittedWarnings = Array.isArray(response.warnings)
+      ? response.warnings
+      : submitWarnings.concat(buildSubmissionWarnings(task, payload));
+    task.reviewStatus = submittedReviewStatus;
     state.reviews[taskKey(task)] = {
-      status: 'pending_review',
+      status: submittedReviewStatus,
       rawText: raw,
       submittedBy:response.performedBy || employeeName,
       enteredBy:response.enteredBy || (managerAssisted ? currentEmployeeName() : ''),
       submissionMode:managerAssisted ? 'manager_assisted' : 'employee',
       submittedAt: new Date().toISOString(),
-      warnings: submitWarnings.concat(buildSubmissionWarnings(task, payload)),
+      warnings: submittedWarnings,
       editedPayload: null
     };
     saveReviews();
@@ -2632,7 +2634,9 @@ async function submitSpy(id, options){
     render();
     const refreshSucceeded = await refresh();
     setStatus(refreshSucceeded
-      ? (managerAssisted ? 'Result submitted on behalf of ' + employeeName + '.' : 'Result submitted.')
+      ? (submittedReviewStatus === 'approved'
+          ? 'Result submitted and automatically approved after validation.'
+          : (managerAssisted ? 'Result submitted on behalf of ' + employeeName + ' for manager review.' : 'Result submitted for manager review.'))
       : 'Result submitted, but the latest queue could not be refreshed. Your submission is saved.');
   }catch(e){
     setTaskBusy(id, false);
@@ -2831,6 +2835,10 @@ function getReview(target){
       warnings: buildSubmissionWarnings(target, payload),
       editedPayload: null
     };
+  } else {
+    state.reviews[key].status = target.reviewStatus || target.approvalStatus || state.reviews[key].status || 'pending_review';
+    state.reviews[key].warnings = buildSubmissionWarnings(target, state.reviews[key].editedPayload || target.payload || {});
+    state.reviews[key].rawText = target.rawText || target.payload?.rawText || state.reviews[key].rawText || '';
   }
   return state.reviews[key];
 }
@@ -2849,12 +2857,74 @@ function buildSubmissionWarnings(target, payload){
   if (stats.every(v => v != null)) {
     const sum = Number(p.strength) + Number(p.speed) + Number(p.dexterity) + Number(p.defense);
     if (p.total != null && Number(p.total) !== sum) warnings.push('Total does not match stat sum.');
+    const reportedTotal = getReportedTotal(p.rawText || target.rawText || '');
+    if (reportedTotal != null && reportedTotal !== sum) warnings.push('Pasted total (' + reportedTotal.toLocaleString('en-US') + ') differs from the four-stat sum (' + sum.toLocaleString('en-US') + ').');
   }
+  getReportedStatWarnings(p.rawText || target.rawText || '', p).forEach(warning => warnings.push(warning));
   if (target.targetId && p.targetId && String(target.targetId) !== String(p.targetId)) warnings.push('Pasted target ID does not match card target ID.');
   const alreadyApproved = state.tasks.some(other => other !== target && other.status === 'submitted' && String(other.targetId || '') === String(target.targetId || '') && state.reviews[taskKey(other)]?.status === 'approved');
   if (alreadyApproved) warnings.push('This target already has an approved result.');
   if (p.level == null || p.level === '') warnings.push('Level is missing.');
   return warnings;
+}
+
+function getReportedStatWarnings(rawText, payload){
+  const warnings = [];
+  [
+    ['Strength','strength','strength|str'],
+    ['Speed','speed','speed|spd|sp'],
+    ['Dexterity','dexterity','dexterity|dex'],
+    ['Defense','defense','defense|defence|def']
+  ].forEach(([label, key, aliases]) => {
+    const match = String(rawText || '').match(new RegExp('(?:^|\\n)\\s*(?:' + aliases + ')\\s*[:=\\-]\\s*([^\\n\\r]+)', 'i'));
+    if (!match) return;
+    const token = String(match[1] || '').trim();
+    const reported = parseNumberToken(token);
+    if (reported == null) warnings.push('Pasted ' + label + ' value could not be parsed ("' + token + '"); verify the inferred or corrected value.');
+    else if (payload[key] != null && payload[key] !== '' && Number(payload[key]) !== reported) warnings.push('Pasted ' + label + ' differs from the submitted value.');
+  });
+  return warnings;
+}
+
+function getReportedTotal(rawText){
+  const match = String(rawText || '').match(/(?:^|\n)\s*(?:total battle stats|total stats|total|sum)\s*[:=\-]\s*([^\n\r]+)/i);
+  return match ? parseNumberToken(match[1]) : null;
+}
+
+async function approveAllCleanSubmissions(){
+  const clean = state.tasks.filter(task =>
+    task.status === 'submitted' &&
+    String(task.reviewStatus || 'pending_review') === 'pending_review' &&
+    buildSubmissionWarnings(task, task.payload || {}).length === 0
+  );
+  if (!clean.length) {
+    setStatus('No clean pending submissions found. Remaining reviews have a reason shown on their card.');
+    return;
+  }
+  if (!window.confirm('Approve ' + clean.length + ' clean submission(s)? Submissions with validation warnings will remain pending.')) return;
+  const button = qs('#approve-all-clean');
+  if (button) { button.disabled = true; button.textContent = 'Approving...'; }
+  let approved = 0;
+  const failures = [];
+  for (const task of clean) {
+    try {
+      await syncLedgerAction('review', {
+        id:task.id,
+        targetRowId:task.id,
+        status:'approved',
+        payload:task.payload || {},
+        submissionId:task.payload && task.payload.submissionId,
+        expectedVersion:task.payload && task.payload.version,
+        requestId:'review:' + (task.payload && task.payload.submissionId) + ':' + (task.payload && task.payload.version) + ':approved'
+      }, true);
+      approved++;
+    } catch (error) {
+      failures.push((task.targetName || task.targetId || task.id) + ': ' + friendlyErrorMessage(error));
+    }
+  }
+  await refresh({ skipReviewSync:true });
+  if (button) { button.disabled = false; button.textContent = 'Approve all clean'; }
+  setStatus('Approved ' + approved + ' clean submission(s).' + (failures.length ? ' ' + failures.length + ' failed: ' + failures[0] : ''));
 }
 
 function readReviewPayload(id){
@@ -3168,7 +3238,7 @@ async function recordEmployeePayout(){
     payload.submissionId = target.payload && target.payload.submissionId;
   }
   if (!payload.targetRowId || !payload.submissionId) {
-    setStatus('Employee payout must reference a submitted target. Refresh and try again.');
+    setStatus('For one target, enter its submitted Target ID. To settle an order without target IDs, enter the Order ID and use “Pay employee in full for order”.');
     return;
   }
   const payoutRequest = getOrCreateOperationRequestId('emppay', payload);
@@ -3192,6 +3262,68 @@ async function recordEmployeePayout(){
     setStatus('Employee payout failed: ' + friendlyErrorMessage(e));
   }finally{
     setActionBusy('employeePayout', false);
+  }
+}
+
+function getEmployeeOrderPayoutPlan(employeeName, orderId){
+  const employeeKey = normalizeEmployeeName(employeeName);
+  const eligible = state.tasks.filter(task =>
+    String(task.orderId || '') === String(orderId || '') &&
+    task.status === 'submitted' &&
+    String(task.reviewStatus || 'pending_review') === 'approved' &&
+    normalizeEmployeeName(task.claimedBy) === employeeKey
+  );
+  const amount = eligible.reduce((sum, task) => {
+    const paid = state.employeePayouts
+      .filter(row => String(row.targetRowId || '') === String(task.id || '') && String(row.status || '').toLowerCase() === 'paid')
+      .reduce((paidSum, row) => paidSum + Number(row.amount || 0), 0);
+    return sum + Math.max(0, Number(task.employeeRate || 0) - paid);
+  }, 0);
+  return { eligible, amount };
+}
+
+async function payEmployeeOrderInFull(){
+  const employeeName = (qs('#ledger-employee')?.value || '').trim();
+  const orderId = (qs('#ledger-payout-order')?.value || '').trim();
+  const reference = (qs('#ledger-payout-ref')?.value || '').trim();
+  if (!employeeName) { setStatus('Enter the employee display name.'); return; }
+  if (!orderId) { setStatus('Enter the Order ID to pay in full.'); return; }
+  const plan = getEmployeeOrderPayoutPlan(employeeName, orderId);
+  if (!plan.eligible.length) {
+    setStatus('No approved submitted targets for ' + employeeName + ' were found in order ' + orderId + '. Refresh and check the employee and order.');
+    return;
+  }
+  if (plan.amount <= 0) {
+    setStatus(employeeName + ' is already fully paid for order ' + orderId + '.');
+    return;
+  }
+  if (!confirmMoneyAction('Pay employee in full for this order?', [
+    'Employee: ' + employeeName,
+    'Order: ' + orderId,
+    'Approved targets: ' + plan.eligible.length,
+    'Remaining payout: ' + Number(plan.amount).toLocaleString(),
+    reference ? 'Reference: ' + reference : ''
+  ])) return;
+  const logicalPayload = { employeeName, orderId, amount:plan.amount, reference };
+  const request = getOrCreateOperationRequestId('emporderpay', logicalPayload);
+  const button = qs('#pay-employee-order-full');
+  if (button) { button.disabled = true; button.textContent = 'Paying order...'; }
+  setStatus('Recording full payout for ' + employeeName + ' in order ' + orderId + '...');
+  try {
+    const result = await syncLedgerAction('employeeOrderPayout', {
+      employeeName,
+      orderId,
+      reference,
+      requestId:request.requestId
+    }, true);
+    sessionStorage.removeItem(request.key);
+    addAuditLog('employee_order_payout_recorded', orderId, employeeName + ' ' + result.amount + ' across ' + result.targetCount + ' target(s)');
+    await refresh();
+    setStatus((result.duplicate ? 'Duplicate ignored. ' : '') + 'Paid ' + Number(result.amount || 0).toLocaleString() + ' to ' + employeeName + ' for order ' + orderId + ' across ' + Number(result.targetCount || 0) + ' target(s).');
+  } catch (error) {
+    setStatus('Full order payout failed: ' + friendlyErrorMessage(error));
+  } finally {
+    if (button) { button.disabled = false; button.textContent = 'Pay employee in full for order'; }
   }
 }
 
@@ -4557,6 +4689,7 @@ async function openJobSpecial(target){
   const exportHistoryBtn=qs('#export-history'); if(exportHistoryBtn) exportHistoryBtn.addEventListener('click',exportHistory);
   const recordCustomerPaymentBtn=qs('#record-customer-payment'); if(recordCustomerPaymentBtn) recordCustomerPaymentBtn.addEventListener('click',recordCustomerPayment);
   const recordEmployeePayoutBtn=qs('#record-employee-payout'); if(recordEmployeePayoutBtn) recordEmployeePayoutBtn.addEventListener('click',recordEmployeePayout);
+  const payEmployeeOrderFullBtn=qs('#pay-employee-order-full'); if(payEmployeeOrderFullBtn) payEmployeeOrderFullBtn.addEventListener('click',payEmployeeOrderInFull);
   const checkAutomationBtn=qs('#check-automation'); if(checkAutomationBtn) checkAutomationBtn.addEventListener('click',checkAutomation);
   const checkBackendVersionBtn=qs('#check-backend-version'); if(checkBackendVersionBtn) checkBackendVersionBtn.addEventListener('click',checkBackendVersion);
   const checkWebhooksBtn=qs('#check-webhooks'); if(checkWebhooksBtn) checkWebhooksBtn.addEventListener('click',checkWebhooks);
@@ -4578,11 +4711,13 @@ async function openJobSpecial(target){
       const btn = event.target.closest('.ledger-suggest');
       if (!btn) return;
       const employee = btn.getAttribute('data-employee') || '';
+      const orderId = btn.getAttribute('data-order-id') || '';
       const amount = btn.getAttribute('data-amount') || '';
       if (qs('#ledger-employee')) qs('#ledger-employee').value = employee;
+      if (qs('#ledger-payout-order')) qs('#ledger-payout-order').value = orderId;
       if (qs('#ledger-employee-amount')) qs('#ledger-employee-amount').value = amount;
-      if (qs('#ledger-employee-status')) qs('#ledger-employee-status').value = 'queued';
-      setStatus('Suggested full payout loaded for ' + employee + '.');
+      if (qs('#ledger-employee-status')) qs('#ledger-employee-status').value = 'paid';
+      setStatus('Full payout loaded for ' + employee + ' in order ' + orderId + '. Review it, then use “Pay employee in full for order”.');
     });
   }
   const automationQueues = qs('#automation-queues');
@@ -4602,6 +4737,7 @@ async function openJobSpecial(target){
   }
   const copyFormat=qs('#copy-format'); if(copyFormat) copyFormat.addEventListener('change',()=>{ state.filters.copyFormat=copyFormat.value; });
   const releaseAllStale=qs('#release-all-stale'); if(releaseAllStale) releaseAllStale.addEventListener('click',releaseAllStaleClaims);
+  const approveAllClean=qs('#approve-all-clean'); if(approveAllClean) approveAllClean.addEventListener('click',approveAllCleanSubmissions);
   const singleName = qs('#m-name');
   if (singleName) {
     singleName.addEventListener('blur', () => {

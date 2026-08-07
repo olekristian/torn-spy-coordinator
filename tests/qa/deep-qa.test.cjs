@@ -113,6 +113,43 @@ test('sequential submission retry returns the same canonical submission', () => 
   assert.equal(h.rows('AuditLog').filter(row => row.action === 'spy_submitted').length, 1);
 });
 
+test('clean submission is automatically approved', () => {
+  const h = createHarness();
+  h.append('Targets', target({ status:'claimed', claimedBy:'Employee A' }));
+  const response = h.request(submissionInput());
+  assert.equal(response.ok, true);
+  assert.equal(response.reviewStatus, 'approved');
+  assert.deepEqual(response.warnings, []);
+  assert.equal(h.rows('Targets')[0].reviewStatus, 'approved');
+  assert.equal(h.rows('Submissions')[0].reviewStatus, 'approved');
+  assert.equal(h.rows('AuditLog').filter(row => row.action === 'spy_auto_approved').length, 1);
+});
+
+test('reported total mismatch remains pending with a concrete review reason', () => {
+  const h = createHarness();
+  h.append('Targets', target({ status:'claimed', claimedBy:'Employee A' }));
+  const base = submissionInput();
+  const response = h.request(submissionInput({
+    payload:{ ...base.payload, rawText:'Total: 1,030' },
+  }));
+  assert.equal(response.ok, true);
+  assert.equal(response.reviewStatus, 'pending_review');
+  assert.match(response.warnings.join(' '), /Pasted total \(1,030\) differs from the four-stat sum \(1,000\)/);
+  assert.equal(h.rows('Targets')[0].reviewStatus, 'pending_review');
+  assert.match(h.rows('Submissions')[0].warnings, /differs from the four-stat sum/);
+});
+
+test('malformed source stat remains pending even when total allowed it to be inferred', () => {
+  const h = createHarness();
+  h.append('Targets', target({ status:'claimed', claimedBy:'Employee A' }));
+  const base = submissionInput();
+  const response = h.request(submissionInput({
+    payload:{ ...base.payload, rawText:'Strength: 10,00\nSpeed: 200\nDexterity: 300\nDefense: 400\nTotal: 1,000' },
+  }));
+  assert.equal(response.reviewStatus, 'pending_review');
+  assert.match(response.warnings.join(' '), /Strength value could not be parsed/);
+});
+
 test('reusing a submission request ID with changed payload is a conflict', () => {
   const h = createHarness();
   h.append('Targets', target({ status:'claimed', claimedBy:'Employee A' }));
@@ -326,6 +363,30 @@ test('parallel payout request conflicts while locked and replays as one payout',
   const retry = h.context.recordEmployeePayout_(payoutInput());
   assert.equal(retry.duplicate, true);
   assert.equal(h.rows('EmployeePayouts').length, 1);
+});
+
+test('manager can pay one employee in full across an order without entering target IDs', () => {
+  const h = createHarness();
+  h.append('Orders', order({ orderId:'order-full' }));
+  h.append('Targets', target({ id:'target-a', targetId:'100001', orderId:'order-full', status:'submitted', reviewStatus:'approved', claimedBy:'Employee A', employeeRate:100 }));
+  h.append('Targets', target({ id:'target-b', targetId:'100002', orderId:'order-full', status:'submitted', reviewStatus:'approved', claimedBy:'Employee A', employeeRate:150 }));
+  h.append('Targets', target({ id:'target-other', targetId:'100003', orderId:'order-full', status:'submitted', reviewStatus:'approved', claimedBy:'Employee B', employeeRate:999 }));
+  h.append('Submissions', { id:'sub-a', targetRowId:'target-a', targetId:'100001', submittedBy:'Employee A', reviewStatus:'approved' });
+  h.append('Submissions', { id:'sub-b', targetRowId:'target-b', targetId:'100002', submittedBy:'Employee A', reviewStatus:'approved' });
+  h.append('Submissions', { id:'sub-other', targetRowId:'target-other', targetId:'100003', submittedBy:'Employee B', reviewStatus:'approved' });
+  h.append('EmployeePayouts', { id:'paid-a', submissionId:'sub-a', targetRowId:'target-a', employee:'Employee A', targetId:'100001', amount:40, status:'paid', requestId:'old-paid' });
+  h.append('EmployeePayouts', { id:'queued-b', submissionId:'sub-b', targetRowId:'target-b', employee:'Employee A', targetId:'100002', amount:25, status:'queued', requestId:'old-queued' });
+  const input = { admin:'admin-key', orderId:'order-full', employeeName:'Employee A', requestId:'full-order-payout', reference:'Vault' };
+  const first = h.context.recordEmployeeOrderPayout_(input);
+  assert.equal(first.amount, 210);
+  assert.equal(first.targetCount, 2);
+  assert.equal(h.rows('EmployeePayouts').filter(row => row.employee === 'Employee B').length, 0);
+  assert.equal(h.rows('EmployeePayouts').find(row => row.id === 'queued-b').status, 'paid');
+  assert.deepEqual(h.rows('Targets').filter(row => ['target-a','target-b'].includes(row.id)).map(row => row.employeePayoutStatus), ['paid','paid']);
+  const retry = h.context.recordEmployeeOrderPayout_(input);
+  assert.equal(retry.duplicate, true);
+  assert.equal(retry.amount, 210);
+  assert.equal(h.rows('AuditLog').filter(row => row.operationId === 'full-order-payout').length, 1);
 });
 
 test('parallel order allocation conflicts then retry allocates a unique ID', () => {
