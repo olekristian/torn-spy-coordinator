@@ -360,7 +360,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
         <button id="theme-toggle-compact" type="button" class="secondary">Theme</button>
       </div>
       <div class="api-privacy setup-primary">
-        The key is sent once to Apps Script to verify your Torn ID and company membership, then exchanged for a temporary session. It is not stored in Sheets, Script Properties, or server logs. In this browser session it can also be used directly with Torn for report lookup.
+        The key is sent once to Apps Script to verify your Torn ID and company membership, then exchanged for a signed session retained on this device until it expires or you sign out. The raw key is not kept after the browser session and is never stored in Sheets, Script Properties, or server logs.
       </div>
       <div class="bar setup-actions setup-primary">
         <label class="sr-only" for="torn-api-key">Torn API key</label>
@@ -720,7 +720,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
 
 <script>
 const DEFAULT_API = "https://script.google.com/macros/s/AKfycbwmvn4x0wmHDllT-IYWINU1OI-DG9Hdk_sEhZUQKmsqJA16y9yOOnAHjJ6NGIqI9WTQ/exec";
-const APP_FRONTEND_VERSION = "2026-08-07-order-payout-v1";
+const APP_FRONTEND_VERSION = "2026-08-07-persistent-session-v1";
 const DEFAULT_KEY = "";
 const STALE_WARNING_MINUTES = 30;
 const STALE_DANGER_MINUTES = 60;
@@ -733,6 +733,8 @@ const THEME_KEY = "torn_theme";
 const TORN_EMPLOYEE_API_KEY = "torn_employee_api_key_session";
 const TORN_EMPLOYEE_SESSION_TOKEN = "torn_employee_session_token";
 const TORN_EMPLOYEE_SESSION_EXPIRY = "torn_employee_session_expiry";
+const TORN_EMPLOYEE_PERSISTED_SESSION_TOKEN = "torn_employee_persisted_session_token";
+const TORN_EMPLOYEE_PERSISTED_SESSION_EXPIRY = "torn_employee_persisted_session_expiry";
 const EMPLOYEE_DRAFTS_KEY = "torn_employee_spy_drafts_session";
 const TORN_PRIVACY_ACK_KEY = "torn_employee_api_privacy_ack";
 const TORN_API_BASE = "https://api.torn.com";
@@ -938,13 +940,18 @@ function mergeSpiesStrictTotal(spyArray){
 function loadSettings(){
   state.me=localStorage.getItem('torn_employee')||'';
   state.key = localStorage.getItem('torn_api_key') || DEFAULT_KEY;
-  state.sessionToken = sessionStorage.getItem(TORN_EMPLOYEE_SESSION_TOKEN) || '';
-  state.sessionExpiresAt = sessionStorage.getItem(TORN_EMPLOYEE_SESSION_EXPIRY) || '';
+  state.sessionToken = sessionStorage.getItem(TORN_EMPLOYEE_SESSION_TOKEN) || localStorage.getItem(TORN_EMPLOYEE_PERSISTED_SESSION_TOKEN) || '';
+  state.sessionExpiresAt = sessionStorage.getItem(TORN_EMPLOYEE_SESSION_EXPIRY) || localStorage.getItem(TORN_EMPLOYEE_PERSISTED_SESSION_EXPIRY) || '';
   if (state.sessionToken && (!state.sessionExpiresAt || Date.parse(state.sessionExpiresAt) <= Date.now())) {
     state.sessionToken = '';
     state.sessionExpiresAt = '';
     sessionStorage.removeItem(TORN_EMPLOYEE_SESSION_TOKEN);
     sessionStorage.removeItem(TORN_EMPLOYEE_SESSION_EXPIRY);
+    localStorage.removeItem(TORN_EMPLOYEE_PERSISTED_SESSION_TOKEN);
+    localStorage.removeItem(TORN_EMPLOYEE_PERSISTED_SESSION_EXPIRY);
+  } else if (state.sessionToken) {
+    sessionStorage.setItem(TORN_EMPLOYEE_SESSION_TOKEN, state.sessionToken);
+    sessionStorage.setItem(TORN_EMPLOYEE_SESSION_EXPIRY, state.sessionExpiresAt);
   }
   state.admin = sessionStorage.getItem('torn_admin_key') || '';
   state.torn.apiKey = sessionStorage.getItem(TORN_EMPLOYEE_API_KEY) || '';
@@ -1058,6 +1065,8 @@ function clearTornEmployeeSession(options){
   state.identity = null;
   sessionStorage.removeItem(TORN_EMPLOYEE_SESSION_TOKEN);
   sessionStorage.removeItem(TORN_EMPLOYEE_SESSION_EXPIRY);
+  localStorage.removeItem(TORN_EMPLOYEE_PERSISTED_SESSION_TOKEN);
+  localStorage.removeItem(TORN_EMPLOYEE_PERSISTED_SESSION_EXPIRY);
   if (options.forgetKey) {
     state.torn.apiKey = '';
     sessionStorage.removeItem(TORN_EMPLOYEE_API_KEY);
@@ -1094,6 +1103,8 @@ async function loginWithTorn(){
     state.torn.apiKey = tornApiKey;
     sessionStorage.setItem(TORN_EMPLOYEE_SESSION_TOKEN, state.sessionToken);
     sessionStorage.setItem(TORN_EMPLOYEE_SESSION_EXPIRY, state.sessionExpiresAt);
+    localStorage.setItem(TORN_EMPLOYEE_PERSISTED_SESSION_TOKEN, state.sessionToken);
+    localStorage.setItem(TORN_EMPLOYEE_PERSISTED_SESSION_EXPIRY, state.sessionExpiresAt);
     sessionStorage.setItem(TORN_EMPLOYEE_API_KEY, tornApiKey);
     localStorage.setItem('torn_employee', state.me);
     localStorage.removeItem('torn_api_key');
@@ -2433,7 +2444,7 @@ async function refresh(options){
     state.adminVerified = false;
     state.accessVerified = false;
     state.verifiedKey = '';
-    if (/session|sign in with Torn/i.test(String(e?.message || e))) clearTornEmployeeSession();
+    if (/Invalid employee session|Employee session expired|Employee session is no longer valid for this company/i.test(String(e?.message || e))) clearTornEmployeeSession();
     if (state.key) localStorage.removeItem('torn_api_key');
     setStatus('Refresh failed: '+friendlyErrorMessage(e));
   }

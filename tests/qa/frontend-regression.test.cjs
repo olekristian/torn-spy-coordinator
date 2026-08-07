@@ -111,11 +111,15 @@ test('shared read-only access directs employees to Torn sign-in or legacy access
   assert.match(html, /Submit failed: ' \+ friendlyErrorMessage\(e\)/);
 });
 
-test('Torn employee sign-in stores only a temporary session outside localStorage', () => {
+test('Torn employee sign-in persists only the signed session and preserves it across refreshes', () => {
   assert.match(html, /action:'authenticateTorn', tornApiKey/);
   assert.match(html, /sessionStorage\.setItem\(TORN_EMPLOYEE_SESSION_TOKEN/);
+  assert.match(html, /localStorage\.setItem\(TORN_EMPLOYEE_PERSISTED_SESSION_TOKEN/);
+  assert.match(html, /localStorage\.getItem\(TORN_EMPLOYEE_PERSISTED_SESSION_TOKEN/);
   assert.match(html, /sessionStorage\.setItem\(TORN_EMPLOYEE_API_KEY/);
   assert.doesNotMatch(html, /localStorage\.setItem\([^\n]*TORN_EMPLOYEE_API_KEY/);
+  assert.match(html, /Invalid employee session\|Employee session expired\|Employee session is no longer valid for this company/);
+  assert.doesNotMatch(html, /if \(\/session\|sign in with Torn\/i/);
   assert.match(html, /payload\.sessionToken = state\.sessionToken/);
   assert.match(html, /function isOwnedByCurrentEmployee/);
   assert.match(html, /claimedByTornId/);
