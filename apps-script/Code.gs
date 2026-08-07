@@ -794,7 +794,7 @@ function recordEmployeePayout_(input) {
       targetId: input.targetId || '',
       amount: amount,
       status: input.status || 'paid',
-      reference: input.reference || '',
+      reference: input.reference || standardPayoutReference_(1),
       note: input.note || '',
       recordedBy: actor,
       recordedAt: now_(),
@@ -843,6 +843,13 @@ function recordEmployeeOrderPayout_(input) {
     let payouts = readObjectsWithRows_(SHEETS.employeePayouts);
     const marker = 'order-payout:' + requestId;
     const touchedTargetIds = {};
+    const payableTargetCount = targets.filter(target => {
+      const paid = payouts
+        .filter(row => String(row.targetRowId || '') === String(target.id || '') && String(row.status || '').toLowerCase() === 'paid')
+        .reduce((sum, row) => sum + num_(row.amount), 0);
+      return submissionByTarget[String(target.id || '')] && num_(target.employeeRate) > paid;
+    }).length;
+    const payoutReference = input.reference || standardPayoutReference_(payableTargetCount);
 
     targets.forEach(target => {
       const submission = submissionByTarget[String(target.id || '')];
@@ -854,7 +861,7 @@ function recordEmployeeOrderPayout_(input) {
       const queued = active.filter(row => String(row.status || '').toLowerCase() === 'queued');
       queued.forEach(row => {
         const note = [String(row.note || '').trim(), marker].filter(Boolean).join(' | ');
-        writeObjectAtRow_(sheet_(SHEETS.employeePayouts), row._row, { status:'paid', reference:input.reference || row.reference || '', note:note });
+        writeObjectAtRow_(sheet_(SHEETS.employeePayouts), row._row, { status:'paid', reference:payoutReference, note:note });
         touchedTargetIds[String(target.id)] = true;
       });
       const queuedAmount = queued.reduce((sum, row) => sum + num_(row.amount), 0);
@@ -868,7 +875,7 @@ function recordEmployeeOrderPayout_(input) {
           targetId: target.targetId || '',
           amount: remaining,
           status: 'paid',
-          reference: input.reference || '',
+          reference: payoutReference,
           note: marker,
           recordedBy: actor,
           recordedAt: now_(),
@@ -894,6 +901,11 @@ function recordEmployeeOrderPayout_(input) {
     ensureAuditOnce_(requestId, actor, 'employee_order_payout_paid', orderId, employeeName + ' | ' + amount + ' | ' + targetCount);
     return { ok:true, orderId:orderId, employeeName:employeeName, amount:amount, targetCount:targetCount, payoutCount:batchRows.length };
   });
+}
+
+function standardPayoutReference_(spyCount) {
+  const count = Number(spyCount || 0);
+  return 'For ' + count + ' ' + (count === 1 ? 'spy' : 'spies');
 }
 
 function reconcileTargetPayout_(targetRowId) {

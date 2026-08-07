@@ -788,6 +788,7 @@ function updateSetupState(){
   if (nameEl) nameEl.textContent = currentEmployeeName() || 'employee';
 }
 function normalizeEmployeeName(name){ return String(name || '').trim().toLowerCase(); }
+function standardPayoutReference(spyCount){ return 'For ' + Number(spyCount || 0) + ' ' + (Number(spyCount || 0) === 1 ? 'spy' : 'spies'); }
 function escapeHtml(v){ return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function attrEqualsSelector(name, value){
   return '[' + name + '="' + String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"]';
@@ -2119,7 +2120,7 @@ function renderLedger(){
     ['Estimated net after recorded payouts', collected - paidOut]
   ];
   const payoutTable = payoutRows.length
-    ? `<table style="margin-top:12px"><thead><tr><th>Employee</th><th>Order</th><th>Owed</th><th>Status</th><th>Suggested action</th></tr></thead><tbody>${payoutRows.map(row => `<tr><td>${escapeHtml(row.employee)}</td><td>${escapeHtml(row.orderId)}</td><td>${Number(row.owed || 0).toLocaleString()}</td><td>${escapeHtml(row.status)}</td><td><button class="ledger-suggest" data-employee="${escapeHtml(row.employee)}" data-order-id="${escapeHtml(row.orderId)}" data-amount="${escapeHtml(String(row.owed))}">Load full order payout</button></td></tr>`).join('')}</tbody></table>`
+    ? `<table style="margin-top:12px"><thead><tr><th>Employee</th><th>Order</th><th>Owed</th><th>Status</th><th>Suggested action</th></tr></thead><tbody>${payoutRows.map(row => `<tr><td>${escapeHtml(row.employee)}</td><td>${escapeHtml(row.orderId)}</td><td>${Number(row.owed || 0).toLocaleString()}</td><td>${escapeHtml(row.status)}</td><td><button class="ledger-suggest" data-employee="${escapeHtml(row.employee)}" data-order-id="${escapeHtml(row.orderId)}" data-amount="${escapeHtml(String(row.owed))}" data-spy-count="${escapeHtml(String(row.spyCount))}">Load full order payout</button></td></tr>`).join('')}</tbody></table>`
     : '<div class="muted" style="margin-top:12px">No unpaid employee balances found.</div>';
   const paymentRows = state.customerPayments.slice().reverse().slice(0, 20);
   const paymentTable = paymentRows.length
@@ -2149,11 +2150,13 @@ function getEmployeePayoutSuggestions(){
       const employeeKey = normalizeEmployeeName(employeeRaw);
       if (!employeeKey) return;
       const key = orderId + '|' + employeeKey;
-      if (!due[key]) due[key] = { displayName: employeeRaw, orderId, amount: 0 };
+      if (!due[key]) due[key] = { displayName: employeeRaw, orderId, amount: 0, spyCount: 0 };
       const paid = state.employeePayouts
         .filter(row => String(row.targetRowId || '') === String(task.id || '') && String(row.status || '').toLowerCase() === 'paid')
         .reduce((sum, row) => sum + Number(row.amount || 0), 0);
-      due[key].amount += Math.max(0, Number(task.employeeRate || 0) - paid);
+      const remaining = Math.max(0, Number(task.employeeRate || 0) - paid);
+      due[key].amount += remaining;
+      if (remaining > 0) due[key].spyCount++;
     });
   return Object.keys(due)
     .map(key => {
@@ -2161,6 +2164,7 @@ function getEmployeePayoutSuggestions(){
       return {
         employee: due[key].displayName,
         orderId: due[key].orderId,
+        spyCount: due[key].spyCount,
         owed,
         status: owed > 0 ? 'You owe this employee' : 'Settled'
       };
@@ -3228,7 +3232,7 @@ async function recordEmployeePayout(){
     targetId: (qs('#ledger-target-id')?.value || '').trim(),
     amount: (qs('#ledger-employee-amount')?.value || '').trim(),
     status: qs('#ledger-employee-status')?.value || 'paid',
-    reference: (qs('#ledger-payout-ref')?.value || '').trim()
+    reference: (qs('#ledger-payout-ref')?.value || '').trim() || standardPayoutReference(1)
   };
   if (!payload.employeeName) { setStatus('Employee payout needs an employee display name.'); return; }
   if (!Number(payload.amount)) { setStatus('Employee payout needs a positive amount.'); return; }
@@ -3273,19 +3277,21 @@ function getEmployeeOrderPayoutPlan(employeeName, orderId){
     String(task.reviewStatus || 'pending_review') === 'approved' &&
     normalizeEmployeeName(task.claimedBy) === employeeKey
   );
-  const amount = eligible.reduce((sum, task) => {
+  const balances = eligible.map(task => {
     const paid = state.employeePayouts
       .filter(row => String(row.targetRowId || '') === String(task.id || '') && String(row.status || '').toLowerCase() === 'paid')
       .reduce((paidSum, row) => paidSum + Number(row.amount || 0), 0);
-    return sum + Math.max(0, Number(task.employeeRate || 0) - paid);
-  }, 0);
-  return { eligible, amount };
+    return { task, remaining:Math.max(0, Number(task.employeeRate || 0) - paid) };
+  });
+  const payable = balances.filter(row => row.remaining > 0);
+  const amount = payable.reduce((sum, row) => sum + row.remaining, 0);
+  return { eligible, payable, amount, targetCount:payable.length };
 }
 
 async function payEmployeeOrderInFull(){
   const employeeName = (qs('#ledger-employee')?.value || '').trim();
   const orderId = (qs('#ledger-payout-order')?.value || '').trim();
-  const reference = (qs('#ledger-payout-ref')?.value || '').trim();
+  let reference = (qs('#ledger-payout-ref')?.value || '').trim();
   if (!employeeName) { setStatus('Enter the employee display name.'); return; }
   if (!orderId) { setStatus('Enter the Order ID to pay in full.'); return; }
   const plan = getEmployeeOrderPayoutPlan(employeeName, orderId);
@@ -3297,10 +3303,14 @@ async function payEmployeeOrderInFull(){
     setStatus(employeeName + ' is already fully paid for order ' + orderId + '.');
     return;
   }
+  if (!reference) {
+    reference = standardPayoutReference(plan.targetCount);
+    if (qs('#ledger-payout-ref')) qs('#ledger-payout-ref').value = reference;
+  }
   if (!confirmMoneyAction('Pay employee in full for this order?', [
     'Employee: ' + employeeName,
     'Order: ' + orderId,
-    'Approved targets: ' + plan.eligible.length,
+    'Spies being paid: ' + plan.targetCount,
     'Remaining payout: ' + Number(plan.amount).toLocaleString(),
     reference ? 'Reference: ' + reference : ''
   ])) return;
@@ -4713,9 +4723,11 @@ async function openJobSpecial(target){
       const employee = btn.getAttribute('data-employee') || '';
       const orderId = btn.getAttribute('data-order-id') || '';
       const amount = btn.getAttribute('data-amount') || '';
+      const spyCount = Number(btn.getAttribute('data-spy-count') || 0);
       if (qs('#ledger-employee')) qs('#ledger-employee').value = employee;
       if (qs('#ledger-payout-order')) qs('#ledger-payout-order').value = orderId;
       if (qs('#ledger-employee-amount')) qs('#ledger-employee-amount').value = amount;
+      if (qs('#ledger-payout-ref')) qs('#ledger-payout-ref').value = standardPayoutReference(spyCount);
       if (qs('#ledger-employee-status')) qs('#ledger-employee-status').value = 'paid';
       setStatus('Full payout loaded for ' + employee + ' in order ' + orderId + '. Review it, then use “Pay employee in full for order”.');
     });

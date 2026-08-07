@@ -376,12 +376,14 @@ test('manager can pay one employee in full across an order without entering targ
   h.append('Submissions', { id:'sub-other', targetRowId:'target-other', targetId:'100003', submittedBy:'Employee B', reviewStatus:'approved' });
   h.append('EmployeePayouts', { id:'paid-a', submissionId:'sub-a', targetRowId:'target-a', employee:'Employee A', targetId:'100001', amount:40, status:'paid', requestId:'old-paid' });
   h.append('EmployeePayouts', { id:'queued-b', submissionId:'sub-b', targetRowId:'target-b', employee:'Employee A', targetId:'100002', amount:25, status:'queued', requestId:'old-queued' });
-  const input = { admin:'admin-key', orderId:'order-full', employeeName:'Employee A', requestId:'full-order-payout', reference:'Vault' };
+  const input = { admin:'admin-key', orderId:'order-full', employeeName:'Employee A', requestId:'full-order-payout' };
   const first = h.context.recordEmployeeOrderPayout_(input);
   assert.equal(first.amount, 210);
   assert.equal(first.targetCount, 2);
   assert.equal(h.rows('EmployeePayouts').filter(row => row.employee === 'Employee B').length, 0);
   assert.equal(h.rows('EmployeePayouts').find(row => row.id === 'queued-b').status, 'paid');
+  assert.equal(h.rows('EmployeePayouts').find(row => row.id === 'queued-b').reference, 'For 2 spies');
+  assert.ok(h.rows('EmployeePayouts').filter(row => String(row.requestId || '').startsWith('full-order-payout:')).every(row => row.reference === 'For 2 spies'));
   assert.deepEqual(h.rows('Targets').filter(row => ['target-a','target-b'].includes(row.id)).map(row => row.employeePayoutStatus), ['paid','paid']);
   const retry = h.context.recordEmployeeOrderPayout_(input);
   assert.equal(retry.duplicate, true);

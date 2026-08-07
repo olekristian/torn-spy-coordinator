@@ -61,7 +61,7 @@ The script creates these tabs automatically:
 
 ## Paying an employee for an order
 
-In **Manager → Payments**, use **Pay employee in full for order** when settling all of one employee's approved work in an order. Enter the employee display name and Order ID; the backend finds the matching approved submissions, calculates each target's remaining employee rate, and records the payout against those targets. Existing paid amounts are deducted and queued amounts are converted to paid, so managers do not need to look up target IDs. The single-target payout action remains available for corrections and partial payments.
+In **Manager → Payments**, use **Pay employee in full for order** when settling all of one employee's approved work in an order. Enter the employee display name and Order ID; the backend finds the matching approved submissions, calculates each target's remaining employee rate, and records the payout against those targets. Existing paid amounts are deducted and queued amounts are converted to paid, so managers do not need to look up target IDs. Payout references default to the standardized message `For X spies` (`For 1 spy` for a single target), while still allowing a custom replacement. The single-target payout action remains available for corrections and partial payments.
 
 ## Cancelling an order
 

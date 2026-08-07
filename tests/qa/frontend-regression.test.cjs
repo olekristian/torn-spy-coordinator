@@ -63,6 +63,8 @@ test('employee payouts can settle an employee per order without manual target ID
   assert.match(html, /action['"],?\s*['"]employeeOrderPayout|syncLedgerAction\('employeeOrderPayout'/);
   assert.match(backend, /function recordEmployeeOrderPayout_/);
   assert.match(backend, /sameActorName_\(target\.claimedBy, employeeName\)/);
+  assert.match(html, /function standardPayoutReference\(/);
+  assert.match(backend, /function standardPayoutReference_\(/);
 });
 
 test('manager can cancel an order with a stable request ID and explicit warning', () => {
