@@ -536,7 +536,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
             <option value="true">Require Torn money first</option>
           </select>
         </div>
-        <textarea id="m-bulk" placeholder="One target per line. Use name | id | notes | priority, name, id, notes, priority, tab-separated values, Name [ID], or profile URLs."></textarea>
+        <textarea id="m-bulk" placeholder="One target per line. Paste raw XIDs, Torn profile URLs (plain or Markdown), Name [ID], or the existing name | id | notes | priority formats. Formats can be mixed."></textarea>
         <div class="row">
           <button id="m-preview-import">Preview Import</button>
           <button id="m-import">Import New Targets</button>
@@ -2676,10 +2676,34 @@ async function submitSpy(id, options){
 }
 
 
+function extractTornProfileId(value){
+  const profile = String(value || '').match(/(?:https?:\/\/)?(?:www\.)?torn\.com\/profiles\.php\?([^\s<>()\]]*)/i);
+  if (!profile) return null;
+  const xid = profile[1].match(/(?:^|&)XID=([^&#]*)/i);
+  return xid ? xid[1].trim() : '';
+}
+
 function parseImportTarget(line){
   const raw = (line || '').trim();
   if (!raw) return null;
   const level = parseImportLevel(raw);
+
+  const profileId = extractTornProfileId(raw);
+  if (profileId !== null) {
+    const urlStart = raw.search(/(?:https?:\/\/)?(?:www\.)?torn\.com\/profiles\.php\?/i);
+    const cleaned = cleanImportedName(urlStart > 0 ? raw.slice(0, urlStart) : '');
+    return {
+      targetName: isLikelyTargetName(cleaned) ? cleaned : '',
+      targetId: profileId,
+      level,
+      notes: '',
+      priority: 'normal'
+    };
+  }
+
+  if (/^\d+$/.test(raw)) {
+    return { targetName: '', targetId: raw, level, notes: '', priority: 'normal' };
+  }
 
   const parts = raw.includes('\t')
     ? raw.split('\t')
@@ -2715,8 +2739,8 @@ function parseSingleTargetInput(rawInput){
   if (bracket) return { targetName: cleanImportedName(bracket[1]), targetId: bracket[2], level };
   const paren = raw.match(/^\s*([^\(\)\n]+?)\s*\((\d{3,})\)\s*$/i);
   if (paren) return { targetName: cleanImportedName(paren[1]), targetId: paren[2], level };
-  const url = raw.match(/profiles\.php\?XID=(\d{3,})/i);
-  if (url) return { targetName: cleanImportedName(raw.replace(/https?:\/\/\S+/gi, '')), targetId: url[1], level };
+  const urlId = extractTornProfileId(raw);
+  if (urlId !== null) return { targetName: cleanImportedName(raw.replace(/https?:\/\/\S+/gi, '')), targetId: urlId, level };
   return { targetName: cleanImportedName(raw), targetId: '', level };
 }
 
@@ -3428,9 +3452,9 @@ function validateTargetImport(raw){
     const key = id || item.targetName.toLowerCase();
     let status = 'New';
     let note = item.notes || '';
-    if (!item.targetName || (id && !/^\d{3,}$/.test(id))) {
+    if ((!item.targetName && !id) || (id && !/^\d+$/.test(id))) {
       status = 'Invalid';
-      note = note || 'Missing name or invalid target ID.';
+      note = note || 'Missing target reference or invalid target ID.';
     } else if (id && existing.has(id)) {
       status = 'Duplicate';
       note = note || 'Target ID already exists on the board.';
@@ -4006,14 +4030,13 @@ function extractImportTargets(raw){
   const found = [];
   const pushFound = (targetName, targetId, notes='')=>{
     const cleaned = cleanImportedName(targetName);
-    if (!isLikelyTargetName(cleaned)) return;
-    if (!/^\d{3,}$/.test(String(targetId || '').trim())) return;
+    const usableName = isLikelyTargetName(cleaned) ? cleaned : '';
     const level = parseImportLevel([targetName, notes].join(' '));
     const parts = String(notes || '').split('|').map(part => part.trim()).filter(Boolean);
     const last = parts[parts.length - 1] || '';
     const priority = normalizePriority(last);
     found.push({
-      targetName: cleaned,
+      targetName: usableName,
       targetId: String(targetId).trim(),
       level,
       notes: ['rush','high','normal','low'].includes(last.toLowerCase()) ? parts.slice(0, -1).join(' | ') : notes.trim(),
@@ -4025,39 +4048,43 @@ function extractImportTargets(raw){
     const line = lines[i];
     if (!line) continue;
 
-    const bracketMatch = line.match(/^\s*([^\[\]\n]+?)\s*\[(\d{3,})\](.*)$/i);
+    const bracketMatch = line.match(/^\s*([^\[\]\n]+?)\s*\[(\d+)\](.*)$/i);
     if (bracketMatch) {
       pushFound(bracketMatch[1], bracketMatch[2], bracketMatch[3] || '');
       continue;
     }
 
-    const parenMatch = line.match(/^\s*([^(\n]+?)\s*\((\d{3,})\)(.*)$/i);
+    const parenMatch = line.match(/^\s*([^(\n]+?)\s*\((\d+)\)(.*)$/i);
     if (parenMatch) {
       pushFound(parenMatch[1], parenMatch[2], parenMatch[3] || '');
       continue;
     }
 
-    const sameLineUrl = line.match(/^(.*?)(?:https?:\/\/\S*profiles\.php\?XID=(\d{3,})\S*)/i);
-    if (sameLineUrl) {
-      pushFound(sameLineUrl[1], sameLineUrl[2]);
+    const profileId = extractTornProfileId(line);
+    if (profileId !== null) {
+      const urlStart = line.search(/(?:https?:\/\/)?(?:www\.)?torn\.com\/profiles\.php\?/i);
+      pushFound(urlStart > 0 ? line.slice(0, urlStart) : '', profileId);
+      continue;
+    }
+
+    if (/^\d+$/.test(line)) {
+      pushFound('', line);
       continue;
     }
 
     const next = lines[i + 1] || '';
-    const nextIdMatch = next.match(/profiles\.php\?XID=(\d{3,})/i);
-    if (nextIdMatch && isLikelyTargetName(line)) {
-      pushFound(line, nextIdMatch[1]);
+    const nextProfileId = extractTornProfileId(next);
+    if (nextProfileId !== null && isLikelyTargetName(line)) {
+      pushFound(line, nextProfileId);
       i += 1;
       continue;
     }
+
+    const parsed = parseImportTarget(line);
+    if (parsed) found.push(parsed);
   }
 
-  if (found.length) return found;
-
-  return text
-    .split('\n')
-    .map(line => parseImportTarget(line))
-    .filter(Boolean);
+  return found;
 }
 
 async function importTargets(){
