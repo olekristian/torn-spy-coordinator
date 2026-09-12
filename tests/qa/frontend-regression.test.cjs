@@ -193,6 +193,22 @@ test('found spy reports resolve the target username and level through the Torn p
   );
 });
 
+test('copying an old order resolves missing names and preserves submission name fallbacks', () => {
+  const formatStart = html.indexOf('function formatSubmittedList');
+  const formatEnd = html.indexOf('\n\nfunction getVisibleSubmitted', formatStart);
+  const formatSource = html.slice(formatStart, formatEnd);
+  assert.match(formatSource, /name: t\.targetName \|\| \(t\.payload && t\.payload\.name\) \|\| ''/);
+
+  const copyStart = html.indexOf('function usableOrderTargetName');
+  const copyEnd = html.indexOf('\n\nasync function setOrderPriceFromCard', copyStart);
+  const copySource = html.slice(copyStart, copyEnd);
+  assert.match(copySource, /async function resolveHistoricalOrderTargetNames\(orderId\)/);
+  assert.match(copySource, /fetchTornProfileIdentity\(targetId\)/);
+  assert.match(copySource, /task\.targetName = name/);
+  assert.match(copySource, /await resolveHistoricalOrderTargetNames\(orderId\)/);
+  assert.match(copySource, /navigator\.clipboard\.writeText\(formatCustomerOrderMessage\(orderId\)\)/);
+});
+
 test('employee spy drafts survive redraws and same-tab mobile reloads', () => {
   assert.match(html, /EMPLOYEE_DRAFTS_KEY\s*=\s*"torn_employee_spy_drafts_session"/);
   assert.match(html, /sessionStorage\.setItem\(EMPLOYEE_DRAFTS_KEY/);

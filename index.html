@@ -746,7 +746,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
 
 <script>
 const DEFAULT_API = "https://script.google.com/macros/s/AKfycbwmvn4x0wmHDllT-IYWINU1OI-DG9Hdk_sEhZUQKmsqJA16y9yOOnAHjJ6NGIqI9WTQ/exec";
-const APP_FRONTEND_VERSION = "2026-09-12-post-refresh-v1";
+const APP_FRONTEND_VERSION = "2026-09-12-historical-order-names-v1";
 const DEFAULT_KEY = "";
 const STALE_WARNING_MINUTES = 30;
 const STALE_DANGER_MINUTES = 60;
@@ -4259,8 +4259,8 @@ function formatSubmittedList(tasks){
     .map(t => {
       // Bygg p� nytt for � garantere at Total = sum(4)
       const p = Object.assign({}, t.payload||{}, {
-        name: t.targetName,
-        targetId: t.targetId
+        name: t.targetName || (t.payload && t.payload.name) || '',
+        targetId: t.targetId || (t.payload && t.payload.targetId) || ''
       });
       // Re-calc strict total
       const has4 = [p.strength,p.speed,p.dexterity,p.defense].every(v=>v!=null);
@@ -4440,11 +4440,49 @@ function formatCustomerOrderMessage(orderId){
   return lines.join('\n');
 }
 
+function usableOrderTargetName(task){
+  const candidates = [task && task.targetName, task && task.payload && task.payload.name];
+  return String(candidates.find(value => value && !/^unknown$/i.test(String(value).trim())) || '').trim();
+}
+
+async function resolveHistoricalOrderTargetNames(orderId){
+  const tasks = getApprovedOrderTasks(orderId);
+  const missing = tasks.filter(task => !usableOrderTargetName(task) && String(task.targetId || task.payload?.targetId || '').trim());
+  if (!missing.length) return { resolved:0, missing:0 };
+  getTornApiKey();
+  setStatus('Resolving ' + missing.length + ' missing target name' + (missing.length === 1 ? '' : 's') + ' from Torn...');
+  const ids = Array.from(new Set(missing.map(task => String(task.targetId || task.payload?.targetId || '').trim())));
+  const profiles = await Promise.all(ids.map(async targetId => {
+    try {
+      return [targetId, await fetchTornProfileIdentity(targetId)];
+    } catch (_) {
+      return [targetId, { name:'', level:null }];
+    }
+  }));
+  const namesById = new Map(profiles.filter(([,profile]) => profile.name).map(([targetId,profile]) => [targetId, profile.name]));
+  let resolved = 0;
+  missing.forEach(task => {
+    const targetId = String(task.targetId || task.payload?.targetId || '').trim();
+    const name = namesById.get(targetId) || '';
+    if (!name) return;
+    task.targetName = name;
+    if (task.payload) task.payload.name = name;
+    resolved += 1;
+  });
+  return { resolved, missing:missing.length - resolved };
+}
+
 async function copyOrderResults(orderId){
-  const order = getOrderCompletion(orderId);
-  await navigator.clipboard.writeText(formatCustomerOrderMessage(orderId));
-  addAuditLog('manager_copied_order_results', orderId, 'Customer delivery message copied');
-  setStatus((order.totalPrice ? 'Customer message copied' : 'Customer message copied. Warning: price is missing') + ' for order ' + orderId + '.');
+  try {
+    const repaired = await resolveHistoricalOrderTargetNames(orderId);
+    const order = getOrderCompletion(orderId);
+    await navigator.clipboard.writeText(formatCustomerOrderMessage(orderId));
+    addAuditLog('manager_copied_order_results', orderId, 'Customer delivery message copied');
+    const unresolved = repaired.missing ? ' Warning: ' + repaired.missing + ' target name' + (repaired.missing === 1 ? '' : 's') + ' could not be resolved.' : '';
+    setStatus((order.totalPrice ? 'Customer message copied' : 'Customer message copied. Warning: price is missing') + ' for order ' + orderId + '.' + unresolved);
+  } catch (e) {
+    setStatus('Copy failed: ' + friendlyErrorMessage(e));
+  }
 }
 
 async function setOrderPriceFromCard(orderId){
