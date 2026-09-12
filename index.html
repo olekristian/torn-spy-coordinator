@@ -180,6 +180,28 @@ button.danger { background: var(--danger); color: #fff; border-color: var(--dang
   min-height:18px;
   font-size:12px;
 }
+.remember-key-option {
+  display:flex;
+  align-items:flex-start;
+  gap:9px;
+  width:fit-content;
+  margin:0 0 10px;
+  color:var(--text-2);
+  cursor:pointer;
+}
+.remember-key-option input {
+  width:16px;
+  height:16px;
+  margin:2px 0 0;
+  padding:0;
+  flex:0 0 auto;
+}
+.remember-key-option span {
+  display:grid;
+  gap:1px;
+}
+.remember-key-option strong { color:var(--text); font-size:13px; }
+.remember-key-option small { color:var(--muted); font-size:11px; }
 .manager-login {
   border-top: 1px solid var(--line);
   margin-top: 8px;
@@ -360,7 +382,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
         <button id="theme-toggle-compact" type="button" class="secondary">Theme</button>
       </div>
       <div class="api-privacy setup-primary">
-        The key is sent once to Apps Script to verify your Torn ID and company membership, then exchanged for a signed session retained on this device until it expires or you sign out. The raw key is not kept after the browser session and is never stored in Sheets, Script Properties, or server logs.
+        The key is sent once to Apps Script to verify your Torn ID and company membership, then exchanged for a signed session retained on this device until it expires or you sign out. The raw key is never stored in Sheets, Script Properties, or server logs. You can optionally remember it in this browser for faster sign-in and report lookup.
       </div>
       <div class="bar setup-actions setup-primary">
         <label class="sr-only" for="torn-api-key">Torn API key</label>
@@ -368,6 +390,10 @@ body:not(.is-admin) .manager-only { display:none !important; }
         <button id="torn-login-btn">Sign in with Torn</button>
         <button id="theme-toggle" type="button" class="secondary">Theme</button>
       </div>
+      <label class="remember-key-option setup-primary">
+        <input id="remember-torn-key" type="checkbox">
+        <span><strong>Remember API key on this device</strong><small>Recommended only on your private device. Do not use this on a public or shared computer.</small></span>
+      </label>
       <details class="manager-login manager-entry setup-primary">
         <summary>Legacy employee code</summary>
         <div class="bar">
@@ -383,7 +409,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
         <summary>Torn API key settings</summary>
         <div class="grid" style="margin-top:8px">
           <div class="api-privacy">
-            Use a Custom Torn API key with <strong>key → info</strong> and <strong>user → profile</strong> for sign-in, plus <strong>user → reports</strong> for report lookup. Key info verifies Torn ID and company membership. The key stays in this browser session and is sent directly to Torn for report lookups.
+            Use a Custom Torn API key with <strong>key → info</strong> and <strong>user → profile</strong> for sign-in, plus <strong>user → reports</strong> for report lookup. Key info verifies Torn ID and company membership. The key is sent directly to Torn for report lookups and is stored on this device only when you select “Remember API key.”
           </div>
           <div class="bar">
             <button id="create-torn-log-key" type="button" class="secondary">Create Torn API key</button>
@@ -720,7 +746,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
 
 <script>
 const DEFAULT_API = "https://script.google.com/macros/s/AKfycbwmvn4x0wmHDllT-IYWINU1OI-DG9Hdk_sEhZUQKmsqJA16y9yOOnAHjJ6NGIqI9WTQ/exec";
-const APP_FRONTEND_VERSION = "2026-09-12-spy-target-identity-v1";
+const APP_FRONTEND_VERSION = "2026-09-12-post-refresh-v1";
 const DEFAULT_KEY = "";
 const STALE_WARNING_MINUTES = 30;
 const STALE_DANGER_MINUTES = 60;
@@ -731,6 +757,7 @@ const HISTORY_KEY = "torn_spy_delivery_history";
 const JOB_SPECIAL_URL = "https://www.torn.com/companies.php?step=your&type=1";
 const THEME_KEY = "torn_theme";
 const TORN_EMPLOYEE_API_KEY = "torn_employee_api_key_session";
+const TORN_EMPLOYEE_REMEMBERED_API_KEY = "torn_employee_api_key_remembered";
 const TORN_EMPLOYEE_SESSION_TOKEN = "torn_employee_session_token";
 const TORN_EMPLOYEE_SESSION_EXPIRY = "torn_employee_session_expiry";
 const TORN_EMPLOYEE_PERSISTED_SESSION_TOKEN = "torn_employee_persisted_session_token";
@@ -954,7 +981,8 @@ function loadSettings(){
     sessionStorage.setItem(TORN_EMPLOYEE_SESSION_EXPIRY, state.sessionExpiresAt);
   }
   state.admin = sessionStorage.getItem('torn_admin_key') || '';
-  state.torn.apiKey = sessionStorage.getItem(TORN_EMPLOYEE_API_KEY) || '';
+  const rememberedTornKey = localStorage.getItem(TORN_EMPLOYEE_REMEMBERED_API_KEY) || '';
+  state.torn.apiKey = sessionStorage.getItem(TORN_EMPLOYEE_API_KEY) || rememberedTornKey;
   loadTaskDrafts();
   localStorage.removeItem('torn_admin_key');
   try{ state.auditLog = JSON.parse(localStorage.getItem(AUDIT_KEY) || '[]'); }catch(_){ state.auditLog = []; }
@@ -964,6 +992,7 @@ function loadSettings(){
   if (qs('#api-key')) qs('#api-key').value = state.key;
   if (qs('#adm')) qs('#adm').value = state.admin;
   if (qs('#torn-api-key')) qs('#torn-api-key').value = state.torn.apiKey;
+  if (qs('#remember-torn-key')) qs('#remember-torn-key').checked = !!rememberedTornKey;
   const meI=qs('#me');
   if(meI) meI.value=state.me;
   updateSetupState();
@@ -1038,7 +1067,7 @@ function saveSettings(){
   enforceVisibility();
 }
 
-async function call(path, method='GET', body){
+async function call(path, method='POST', body){
   if(!state.api) throw new Error('API not configured');
   if(!hasAccessCode()) throw new Error('Employee sign-in is missing. Sign in with Torn or enter a legacy employee code.');
   const url = state.api;
@@ -1071,8 +1100,11 @@ function clearTornEmployeeSession(options){
     state.torn.apiKey = '';
     sessionStorage.removeItem(TORN_EMPLOYEE_API_KEY);
     sessionStorage.removeItem(TORN_PRIVACY_ACK_KEY);
+    localStorage.removeItem(TORN_EMPLOYEE_REMEMBERED_API_KEY);
     const tornInput = qs('#torn-api-key');
     if (tornInput) tornInput.value = '';
+    const rememberInput = qs('#remember-torn-key');
+    if (rememberInput) rememberInput.checked = false;
   }
 }
 
@@ -1106,6 +1138,8 @@ async function loginWithTorn(){
     localStorage.setItem(TORN_EMPLOYEE_PERSISTED_SESSION_TOKEN, state.sessionToken);
     localStorage.setItem(TORN_EMPLOYEE_PERSISTED_SESSION_EXPIRY, state.sessionExpiresAt);
     sessionStorage.setItem(TORN_EMPLOYEE_API_KEY, tornApiKey);
+    if (qs('#remember-torn-key')?.checked) localStorage.setItem(TORN_EMPLOYEE_REMEMBERED_API_KEY, tornApiKey);
+    else localStorage.removeItem(TORN_EMPLOYEE_REMEMBERED_API_KEY);
     localStorage.setItem('torn_employee', state.me);
     localStorage.removeItem('torn_api_key');
     const legacyKey = qs('#api-key');
@@ -2408,7 +2442,7 @@ async function refresh(options){
   setStatus('');
   try{
     savePastes();
-    const data=await call('?action=list','GET');
+    const data=await call('', 'POST', { action:'list' });
     state.tasks=data.tasks||[];
     state.orders=data.orders||[];
     state.customerPayments=data.customerPayments||[];
@@ -2426,7 +2460,7 @@ async function refresh(options){
     if (state.adminVerified && !options.skipReviewSync) {
       const reviewSync = await reconcileLocalReviewsToServer_();
       if (reviewSync.synced > 0) {
-        const latest = await call('?action=list','GET');
+        const latest = await call('', 'POST', { action:'list' });
         state.tasks = latest.tasks || state.tasks;
         state.orders = latest.orders || state.orders;
         state.customerPayments = latest.customerPayments || state.customerPayments;
@@ -3584,12 +3618,16 @@ function delay(ms){
 
 function ensureTornPrivacyAcknowledged(){
   if (sessionStorage.getItem(TORN_PRIVACY_ACK_KEY) === 'yes') return true;
+  const rememberKey = !!qs('#remember-torn-key')?.checked;
   const ok = window.confirm([
     'Use your Torn API key?',
     '',
     'The key is sent once to this tool\'s Apps Script backend to verify your Torn ID and company membership.',
     'Apps Script exchanges it for a temporary signed session and does not save the key in Sheets or Script Properties.',
-    'The browser keeps the key only for this tab/session and sends it directly to api.torn.com for report lookup. Do not use Full Access.',
+    rememberKey
+      ? 'You chose to remember the key in this browser. Use this only on your private device, never on a public or shared computer.'
+      : 'The browser keeps the key only for this tab/session.',
+    'The key is sent directly to api.torn.com for report lookup. Do not use Full Access.',
     '',
     'Continue?'
   ].join('\n'));
@@ -3666,9 +3704,12 @@ function forgetTornKey(){
   state.torn = { apiKey:"", verified:null, logMatches:{} };
   sessionStorage.removeItem(TORN_EMPLOYEE_API_KEY);
   sessionStorage.removeItem(TORN_PRIVACY_ACK_KEY);
+  localStorage.removeItem(TORN_EMPLOYEE_REMEMBERED_API_KEY);
   const input = qs('#torn-api-key');
   if (input) input.value = '';
-  setTornApiStatus('Torn API key forgotten for this browser session.');
+  const rememberInput = qs('#remember-torn-key');
+  if (rememberInput) rememberInput.checked = false;
+  setTornApiStatus('Torn API key forgotten on this device.');
 }
 
 function getTornLogHours(){
@@ -4727,6 +4768,16 @@ async function openJobSpecial(target){
   const createTornKeyBtn=qs('#create-torn-log-key'); if(createTornKeyBtn) createTornKeyBtn.addEventListener('click',openTornCustomKeyBuilder);
   const verifyTornBtn=qs('#verify-torn-key'); if(verifyTornBtn) verifyTornBtn.addEventListener('click',verifyTornKey);
   const forgetTornBtn=qs('#forget-torn-key'); if(forgetTornBtn) forgetTornBtn.addEventListener('click',forgetTornKey);
+  const rememberTornKey=qs('#remember-torn-key'); if(rememberTornKey) {
+    rememberTornKey.addEventListener('change',()=>{
+      if (!rememberTornKey.checked) {
+        localStorage.removeItem(TORN_EMPLOYEE_REMEMBERED_API_KEY);
+        setTornApiStatus('This API key will no longer be remembered after the browser session ends.');
+      } else {
+        setTornApiStatus('The API key will be remembered after a successful sign-in. Do not enable this on a public or shared computer.', 'warn');
+      }
+    });
+  }
   const tornKeyInput=qs('#torn-api-key'); if(tornKeyInput) {
     tornKeyInput.addEventListener('input',()=>{ state.torn.apiKey = tornKeyInput.value.trim(); state.torn.verified = null; if (state.torn.apiKey) sessionStorage.setItem(TORN_EMPLOYEE_API_KEY, state.torn.apiKey); else sessionStorage.removeItem(TORN_EMPLOYEE_API_KEY); });
     tornKeyInput.addEventListener('keydown',(event)=>{ if(event.key === 'Enter'){ event.preventDefault(); loginWithTorn(); } });

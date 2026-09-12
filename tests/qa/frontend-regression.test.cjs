@@ -112,13 +112,17 @@ test('shared read-only access directs employees to Torn sign-in or legacy access
   assert.match(html, /Submit failed: ' \+ friendlyErrorMessage\(e\)/);
 });
 
-test('Torn employee sign-in persists only the signed session and preserves it across refreshes', () => {
+test('Torn employee sign-in preserves its session and only remembers the raw key by explicit opt-in', () => {
   assert.match(html, /action:'authenticateTorn', tornApiKey/);
   assert.match(html, /sessionStorage\.setItem\(TORN_EMPLOYEE_SESSION_TOKEN/);
   assert.match(html, /localStorage\.setItem\(TORN_EMPLOYEE_PERSISTED_SESSION_TOKEN/);
   assert.match(html, /localStorage\.getItem\(TORN_EMPLOYEE_PERSISTED_SESSION_TOKEN/);
   assert.match(html, /sessionStorage\.setItem\(TORN_EMPLOYEE_API_KEY/);
-  assert.doesNotMatch(html, /localStorage\.setItem\([^\n]*TORN_EMPLOYEE_API_KEY/);
+  assert.match(html, /id="remember-torn-key" type="checkbox"/);
+  assert.match(html, /Do not use this on a public or shared computer/);
+  assert.match(html, /localStorage\.getItem\(TORN_EMPLOYEE_REMEMBERED_API_KEY\)/);
+  assert.match(html, /remember-torn-key'\)\?\.checked\) localStorage\.setItem\(TORN_EMPLOYEE_REMEMBERED_API_KEY, tornApiKey\)/);
+  assert.match(html, /localStorage\.removeItem\(TORN_EMPLOYEE_REMEMBERED_API_KEY\)/);
   assert.match(html, /Invalid employee session\|Employee session expired\|Employee session is no longer valid for this company/);
   assert.doesNotMatch(html, /if \(\/session\|sign in with Torn\/i/);
   assert.match(html, /payload\.sessionToken = state\.sessionToken/);
@@ -137,6 +141,15 @@ test('direct Torn report requests use the Authorization header, not URL credenti
   const source = html.slice(start, end);
   assert.match(source, /Authorization:'ApiKey ' \+ key/);
   assert.doesNotMatch(source, /searchParams\.set\('key'/);
+});
+
+test('queue refresh uses authenticated POST requests', () => {
+  const start = html.indexOf('async function refresh(options)');
+  const end = html.indexOf('\nfunction editAccess()', start);
+  const source = html.slice(start, end);
+  assert.match(source, /call\('', 'POST', \{ action:'list' \}\)/);
+  assert.doesNotMatch(source, /call\([^)]*,\s*'GET'/);
+  assert.match(html, /async function call\(path, method='POST', body\)/);
 });
 
 test('Torn key verification uses the v2 key-info endpoint and checks required selections', () => {
