@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const html = fs.readFileSync(path.resolve(__dirname, '../../index.html'), 'utf8');
 const backend = fs.readFileSync(path.resolve(__dirname, '../../apps-script/Code.gs'), 'utf8');
@@ -147,6 +148,36 @@ test('Torn key verification uses the v2 key-info endpoint and checks required se
   assert.match(source, /userSelections\.includes\('reports'\)/);
   assert.match(source, /userSelections\.includes\('profile'\)/);
   assert.doesNotMatch(source, /fetchTornEndpoint\('\/key\/'/);
+});
+
+test('found spy reports resolve the target username and level through the Torn profile', () => {
+  const start = html.indexOf('async function findSpyFromLogs');
+  const end = html.indexOf('\n\nfunction extractImportTargets', start);
+  const source = html.slice(start, end);
+  assert.match(source, /!match\.parsed\.targetName \|\| match\.parsed\.level == null/);
+  assert.match(source, /fetchTornProfileIdentity\(match\.parsed\.targetId \|\| task\.targetId\)/);
+  assert.match(source, /match\.parsed\.targetName = profile\.name/);
+  assert.match(html, /function normalizeTornProfileIdentity\(data\)/);
+  assert.match(html, /candidate\.name \|\| candidate\.username/);
+
+  const helperStart = html.indexOf('function normalizeTornProfileIdentity');
+  const helperEnd = html.indexOf('\n\nasync function fetchTornProfileIdentity', helperStart);
+  const context = {
+    parseNumberToken(value) {
+      const number = Number(value);
+      return Number.isSafeInteger(number) ? number : null;
+    },
+  };
+  vm.createContext(context);
+  vm.runInContext(html.slice(helperStart, helperEnd), context);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(context.normalizeTornProfileIdentity({ name:'Eustaquio', level:100 }))),
+    { name:'Eustaquio', level:100 },
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(context.normalizeTornProfileIdentity({ profile:{ username:'NestedName', level:94 } }))),
+    { name:'NestedName', level:94 },
+  );
 });
 
 test('employee spy drafts survive redraws and same-tab mobile reloads', () => {

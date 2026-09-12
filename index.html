@@ -720,7 +720,7 @@ body:not(.is-admin) .manager-only { display:none !important; }
 
 <script>
 const DEFAULT_API = "https://script.google.com/macros/s/AKfycbwmvn4x0wmHDllT-IYWINU1OI-DG9Hdk_sEhZUQKmsqJA16y9yOOnAHjJ6NGIqI9WTQ/exec";
-const APP_FRONTEND_VERSION = "2026-08-07-persistent-session-v1";
+const APP_FRONTEND_VERSION = "2026-09-12-spy-target-identity-v1";
 const DEFAULT_KEY = "";
 const STALE_WARNING_MINUTES = 30;
 const STALE_DANGER_MINUTES = 60;
@@ -3888,9 +3888,21 @@ function buildTornReportTextFromParsed(parsed, metaLine){
   ].filter(line => line !== null && line !== undefined).join('\n');
 }
 
-async function fetchTornProfileLevel(targetId){
+function normalizeTornProfileIdentity(data){
+  const candidates = [data && data.profile, data && data.user, data].filter(value => value && typeof value === 'object' && !Array.isArray(value));
+  let name = '';
+  let level = null;
+  for (const candidate of candidates) {
+    if (!name) name = String(candidate.name || candidate.username || candidate.user_name || candidate.player_name || '').trim();
+    if (level == null) level = parseNumberToken(candidate.level ?? candidate.user_level ?? candidate.player_level ?? candidate.lvl);
+  }
+  return { name, level };
+}
+
+async function fetchTornProfileIdentity(targetId){
   const id = String(targetId || '').trim();
-  if (!/^\d{3,}$/.test(id)) return null;
+  if (!/^\d{3,}$/.test(id)) return { name:'', level:null };
+  const resolved = { name:'', level:null };
   const attempts = [
     ['/v2/user/' + encodeURIComponent(id) + '/profile', { timestamp: Date.now() }],
     ['/v2/user/' + encodeURIComponent(id), { selections:'profile', timestamp: Date.now() }],
@@ -3899,11 +3911,13 @@ async function fetchTornProfileLevel(targetId){
   for (const [path, params] of attempts) {
     try{
       const data = await fetchTornEndpoint(path, params);
-      const level = parseNumberToken(findReportField(data, ['level','target_level','targetlevel','player_level','playerlevel','user_level','userlevel','lvl']));
-      if (level != null) return level;
+      const profile = normalizeTornProfileIdentity(data);
+      if (!resolved.name && profile.name) resolved.name = profile.name;
+      if (resolved.level == null && profile.level != null) resolved.level = profile.level;
+      if (resolved.name && resolved.level != null) return resolved;
     }catch(_){}
   }
-  return null;
+  return resolved;
 }
 
 async function fetchRecentSpyLogs(hours){
@@ -3995,16 +4009,20 @@ async function findSpyFromLogs(id, submitAfterFind){
       setStatus('No matching spy report found in recent Torn reports. Fetched ' + reports.length + ' report(s).' + sample);
       return;
     }
-    if (match.parsed.level == null) {
-      setStatus('Found spy report. Fetching target level from Torn profile...');
-      const profileLevel = await fetchTornProfileLevel(match.parsed.targetId || task.targetId);
-      if (profileLevel != null) {
-        match.parsed.level = profileLevel;
+    if (!match.parsed.targetName || match.parsed.level == null) {
+      setStatus('Found spy report. Fetching target name and level from Torn profile...');
+      const profile = await fetchTornProfileIdentity(match.parsed.targetId || task.targetId);
+      if (profile.name && !match.parsed.targetName) match.parsed.targetName = profile.name;
+      if (profile.level != null && match.parsed.level == null) match.parsed.level = profile.level;
+      if (profile.name || profile.level != null) {
         match.text = buildTornReportTextFromParsed(match.parsed, match.merged ? 'Merged from ' + (match.reportCount || '?') + ' Torn report(s).' : '');
         match.parsed.rawText = match.text;
-        setTornApiStatus('Fetched target level from Torn profile: ' + profileLevel + '.', 'good');
-      } else {
-        setTornApiStatus('Spy report found, but level was not available. Recreate the key with user -> profile or add level on import.', 'warn');
+        const fetched = [profile.name ? 'name ' + profile.name : '', profile.level != null ? 'level ' + profile.level : ''].filter(Boolean).join(' and ');
+        setTornApiStatus('Fetched target ' + fetched + ' from Torn profile.', 'good');
+      }
+      if (!match.parsed.targetName || match.parsed.level == null) {
+        const missing = [!match.parsed.targetName ? 'name' : '', match.parsed.level == null ? 'level' : ''].filter(Boolean).join(' and ');
+        setTornApiStatus('Spy report found, but target ' + missing + ' was not available. Recreate the key with user -> profile or enter it before submitting.', 'warn');
       }
     }
     const ta = document.getElementById('paste-' + id);
